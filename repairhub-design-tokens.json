@@ -1,0 +1,207 @@
+{
+  "meta": {
+    "project": "RepairHub",
+    "source_html": "D:\\RepairHub\\UI_design_version2.html",
+    "output_intent": "Figma foundations and responsive reconstruction"
+  },
+  "colors": {
+    "cream": "#F6F3EE",
+    "cream_2": "#EDE8DF",
+    "cream_3": "#E3DDD2",
+    "green": "#1D4B20",
+    "green_mid": "#2A6430",
+    "green_soft": "#3F8447",
+    "green_light": "#E6EFE7",
+    "green_border": "#B8D4BA",
+    "amber": "#B35A1E",
+    "amber_mid": "#D06D28",
+    "amber_light": "#F4E8DC",
+    "amber_border": "#E0B899",
+    "blue": "#1A4568",
+    "blue_light": "#E2EDF6",
+    "blue_border": "#A8C5DC",
+    "ink": "#1A1916",
+    "ink_60": "#585650",
+    "ink_40": "#8F8D87",
+    "ink_20": "#C9C7C1",
+    "card": "#FDFCF9",
+    "white": "#FFFFFF"
+  },
+  "typography": {
+    "families": {
+      "display": "Playfair Display",
+      "body": "Plus Jakarta Sans"
+    },
+    "styles": {
+      "display_hero": {
+        "family": "display",
+        "weight": 500,
+        "size_min": 44,
+        "size_max": 64,
+        "line_height": 1.08,
+        "letter_spacing_percent": -2
+      },
+      "display_section": {
+        "family": "display",
+        "weight": 500,
+        "size": 30,
+        "line_height": 1.2
+      },
+      "display_stat": {
+        "family": "display",
+        "weight": 500,
+        "size": 32,
+        "line_height": 1
+      },
+      "heading_md": {
+        "family": "display",
+        "weight": 500,
+        "size": 24,
+        "line_height": 1.2
+      },
+      "body_base": {
+        "family": "body",
+        "weight": 400,
+        "size": 14,
+        "line_height": 1.6
+      },
+      "body_sm": {
+        "family": "body",
+        "weight": 400,
+        "size": 13,
+        "line_height": 1.65
+      },
+      "body_xs": {
+        "family": "body",
+        "weight": 400,
+        "size": 12,
+        "line_height": 1.5
+      },
+      "overline": {
+        "family": "body",
+        "weight": 600,
+        "size": 11,
+        "line_height": 1.2,
+        "uppercase": true,
+        "letter_spacing_percent": 10
+      },
+      "button_md": {
+        "family": "body",
+        "weight": 600,
+        "size": 13,
+        "line_height": 1.2
+      },
+      "button_lg": {
+        "family": "body",
+        "weight": 600,
+        "size": 15,
+        "line_height": 1.2
+      }
+    }
+  },
+  "radius": {
+    "sm": 6,
+    "md": 10,
+    "lg": 16,
+    "xl": 24,
+    "full": 9999
+  },
+  "borders": {
+    "default": 1.5,
+    "strong": 2
+  },
+  "shadows": {
+    "sm": "0 1px 3px rgba(26,25,22,.06), 0 1px 2px rgba(26,25,22,.04)",
+    "md": "0 4px 12px rgba(26,25,22,.08), 0 2px 4px rgba(26,25,22,.04)",
+    "lg": "0 12px 32px rgba(26,25,22,.10), 0 4px 8px rgba(26,25,22,.04)"
+  },
+  "spacing": {
+    "4": 4,
+    "6": 6,
+    "8": 8,
+    "10": 10,
+    "12": 12,
+    "14": 14,
+    "16": 16,
+    "18": 18,
+    "20": 20,
+    "24": 24,
+    "28": 28,
+    "32": 32,
+    "36": 36,
+    "40": 40,
+    "44": 44,
+    "48": 48,
+    "52": 52
+  },
+  "layout": {
+    "desktop_frame_width": 1440,
+    "tablet_frame_width": 834,
+    "mobile_frame_width": 390,
+    "content_max_width": 1120,
+    "page_padding_desktop": 24,
+    "page_padding_mobile": 16,
+    "section_gap": 48,
+    "breakpoints": {
+      "tablet_stack": 900,
+      "home_nav_hide": 700,
+      "mobile_dense": 640,
+      "single_column": 600
+    }
+  },
+  "components": {
+    "button": {
+      "sizes": {
+        "sm": {
+          "padding_y": 6,
+          "padding_x": 13,
+          "font_size": 12
+        },
+        "md": {
+          "padding_y": 9,
+          "padding_x": 18,
+          "font_size": 13
+        },
+        "lg": {
+          "padding_y": 13,
+          "padding_x": 28,
+          "font_size": 15
+        }
+      }
+    },
+    "avatar": {
+      "sm": 32,
+      "md": 42,
+      "lg": 52
+    },
+    "card": {
+      "padding_default": 20,
+      "padding_stat_vertical": 18,
+      "padding_stat_horizontal": 20
+    },
+    "step_indicator": {
+      "circle_size": 32,
+      "connector_height": 1.5
+    },
+    "journey_track": {
+      "node_size": 26,
+      "line_height": 2
+    },
+    "hero_search": {
+      "columns_desktop": "1fr 1fr auto",
+      "columns_mobile": "1fr",
+      "padding_y": 14,
+      "padding_x": 16
+    }
+  },
+  "screen_sets": [
+    "Home / Desktop / Tablet / Mobile",
+    "Request Step 1 / Desktop / Tablet / Mobile",
+    "Request Step 2 / Desktop / Tablet / Mobile",
+    "Request Step 3 / Desktop / Tablet / Mobile",
+    "Request Step 4 / Desktop / Tablet / Mobile",
+    "Dashboard / Desktop / Tablet / Mobile",
+    "Community / Desktop / Tablet / Mobile",
+    "Client / Desktop / Tablet / Mobile"
+  ]
+}

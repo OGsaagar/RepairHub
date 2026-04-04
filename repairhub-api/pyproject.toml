@@ -1,0 +1,68 @@
+[project]
+name = "repairhub-api"
+version = "0.1.0"
+description = "RepairHub Django API"
+readme = "README.md"
+authors = [
+    { name = "Sagar Chaudhary", email = "saagarchaudhary4@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "channels>=4.3.2",
+    "cloudinary>=1.44.1",
+    "dj-database-url>=3.1.2",
+    "django>=5,<6",
+    "django-cors-headers>=4.9.0",
+    "django-q2>=1.9.0",
+    "djangorestframework>=3.17.1",
+    "djangorestframework-simplejwt>=5.5.1",
+    "google-generativeai>=0.8.6",
+    "gunicorn>=25.3.0",
+    "httpx>=0.28.1",
+    "pydantic>=2.12.5",
+    "python-dotenv>=1.2.2",
+    "stripe>=15.0.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.24,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "black>=26.3.1",
+    "django-stubs>=6.0.2",
+    "djangorestframework-stubs>=3.16.9",
+    "mypy>=1.20.0",
+    "pytest>=9.0.2",
+    "pytest-django>=4.12.0",
+    "ruff>=0.15.9",
+    "types-requests>=2.33.0.20260402",
+]
+
+[tool.black]
+line-length = 100
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["src/**/migrations/*.py", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "repairhub_api.settings"
+pythonpath = ["src"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+strict = true
+ignore_missing_imports = true
+exclude = "src/.*/migrations/.*"
+explicit_package_bases = true
+
+[tool.django-stubs]
+django_settings_module = "repairhub_api.settings"
