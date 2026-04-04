@@ -1,3 +1,6 @@
+export { ThreadPageOwnerTools as ThreadPage } from "./thread-page-owner-tools";
+
+/*
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -30,6 +33,7 @@ function getAuthorName(firstName: string | undefined, lastName: string | undefin
 
   return email ?? "RepairHub Member";
 }
+*/
 
 export function ThreadPage() {
   const { threadId = "" } = useParams();

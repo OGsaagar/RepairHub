@@ -19,6 +19,7 @@ export type ThreadSummary = {
   title: string;
   category: string;
   author: string;
+  authorUserId?: string | null;
   replies: number;
   updatedAt: string;
   body: string;
@@ -27,6 +28,7 @@ export type ThreadSummary = {
 export type ThreadReply = {
   id: string;
   author: string;
+  authorUserId?: string | null;
   authorRole: Exclude<AppRole, "guest">;
   body: string;
   postedAt: string;
@@ -114,12 +116,26 @@ type CreateThreadInput = {
   category: string;
   body: string;
   author: string;
+  authorUserId: string;
 };
 
 type CreateReplyInput = {
   body: string;
   author: string;
+  authorUserId: string;
   authorRole: Exclude<AppRole, "guest">;
+};
+
+type UpdateThreadInput = {
+  title: string;
+  category: string;
+  body: string;
+  authorUserId: string;
+};
+
+type UpdateReplyInput = {
+  body: string;
+  authorUserId: string;
 };
 
 function buildYouTubeSearchUrl(title: string) {
@@ -234,6 +250,7 @@ const defaultThreads: ThreadDetail[] = [
     title: "Laptop won't charge even with new cable. Any ideas?",
     category: "Electronics",
     author: "Elena K.",
+    authorUserId: "seed-customer-elena",
     replies: 2,
     updatedAt: "2h ago",
     body: "Start with the port, adapter wattage, and battery health report before assuming the logic board failed.",
@@ -241,6 +258,7 @@ const defaultThreads: ThreadDetail[] = [
       {
         id: "laptop-charge-reply-1",
         author: "Marcus R.",
+        authorUserId: "seed-repairer-marcus",
         authorRole: "repairer",
         body: "Check whether the charging port feels loose or only charges when the cable is held at an angle. That often points to port wear before board damage.",
         postedAt: "1h ago",
@@ -248,6 +266,7 @@ const defaultThreads: ThreadDetail[] = [
       {
         id: "laptop-charge-reply-2",
         author: "Nadia P.",
+        authorUserId: "seed-customer-nadia",
         authorRole: "customer",
         body: "I had the same issue and the adapter wattage was the cause. Compare the charger output against the laptop's required wattage before opening it up.",
         postedAt: "45m ago",
@@ -259,6 +278,7 @@ const defaultThreads: ThreadDetail[] = [
     title: "Best thread type for repairing denim jeans?",
     category: "Clothing",
     author: "Pierre W.",
+    authorUserId: "seed-customer-pierre",
     replies: 2,
     updatedAt: "5h ago",
     body: "Use topstitch or heavy-duty polyester and match the original stitch density to avoid puckering.",
@@ -266,6 +286,7 @@ const defaultThreads: ThreadDetail[] = [
       {
         id: "best-denim-thread-reply-1",
         author: "Sofia L.",
+        authorUserId: "seed-repairer-sofia",
         authorRole: "repairer",
         body: "Topstitch thread works well if your machine can tension it correctly. For hand repair, a strong polyester thread gives cleaner control.",
         postedAt: "4h ago",
@@ -273,6 +294,7 @@ const defaultThreads: ThreadDetail[] = [
       {
         id: "best-denim-thread-reply-2",
         author: "Mina K.",
+        authorUserId: "seed-customer-mina",
         authorRole: "customer",
         body: "I doubled the thread on my last repair and it got bulky. Matching the original stitch spacing mattered more than using extra thickness.",
         postedAt: "3h ago",
@@ -284,6 +306,7 @@ const defaultThreads: ThreadDetail[] = [
     title: "How to remove a water stain from a hardwood table?",
     category: "Furniture",
     author: "Mia O.",
+    authorUserId: "seed-customer-mia",
     replies: 2,
     updatedAt: "1d ago",
     body: "Most light rings respond to low heat and a dry cloth before you move to refinishing.",
@@ -291,6 +314,7 @@ const defaultThreads: ThreadDetail[] = [
       {
         id: "water-stain-table-reply-1",
         author: "Lina O.",
+        authorUserId: "seed-repairer-lina",
         authorRole: "repairer",
         body: "Keep the heat low and keep the cloth moving. If you hold heat in one spot too long you can haze the finish.",
         postedAt: "20h ago",
@@ -298,6 +322,7 @@ const defaultThreads: ThreadDetail[] = [
       {
         id: "water-stain-table-reply-2",
         author: "Ben C.",
+        authorUserId: "seed-customer-ben",
         authorRole: "customer",
         body: "A microfiber cloth worked better for me than a paper towel because it distributed the heat more evenly.",
         postedAt: "18h ago",
@@ -314,6 +339,7 @@ function summarizeThread(thread: ThreadDetail): ThreadSummary {
     title: thread.title,
     category: thread.category,
     author: thread.author,
+    authorUserId: thread.authorUserId,
     replies: thread.replies,
     updatedAt: thread.updatedAt,
     body: thread.body,
@@ -465,6 +491,31 @@ function delay<T>(value: T): Promise<T> {
   return new Promise((resolve) => window.setTimeout(() => resolve(value), 120));
 }
 
+function requireThread(threadId: string) {
+  const thread = communityThreads.find((item) => item.id === threadId);
+  if (!thread) {
+    throw new Error("Thread not found.");
+  }
+  return thread;
+}
+
+function requireThreadOwner(thread: ThreadDetail, authorUserId: string) {
+  if (thread.authorUserId !== authorUserId) {
+    throw new Error("You can only edit or delete your own questions.");
+  }
+}
+
+function requireReplyOwner(reply: ThreadReply, authorUserId: string) {
+  if (reply.authorUserId !== authorUserId) {
+    throw new Error("You can only edit or delete your own replies.");
+  }
+}
+
+function upsertThread(thread: ThreadDetail) {
+  communityThreads = [thread, ...communityThreads.filter((item) => item.id !== thread.id)];
+  return thread;
+}
+
 export function fetchHomePageData() {
   return delay({
     ...homeData,
@@ -530,22 +581,18 @@ export function createCommunityThread(input: CreateThreadInput) {
     title: input.title,
     category: input.category,
     author: input.author,
+    authorUserId: input.authorUserId,
     replies: 0,
     updatedAt: "Just now",
     body: input.body,
     replyItems: [],
   };
 
-  communityThreads = [thread, ...communityThreads];
-  return delay(thread);
+  return delay(upsertThread(thread));
 }
 
 export function createCommunityReply(threadId: string, input: CreateReplyInput) {
-  const existingThread = communityThreads.find((thread) => thread.id === threadId);
-
-  if (!existingThread) {
-    throw new Error("Thread not found.");
-  }
+  const existingThread = requireThread(threadId);
 
   const updatedThread: ThreadDetail = {
     ...existingThread,
@@ -554,6 +601,7 @@ export function createCommunityReply(threadId: string, input: CreateReplyInput) 
       {
         id: `${threadId}-reply-${Date.now()}`,
         author: input.author,
+        authorUserId: input.authorUserId,
         authorRole: input.authorRole,
         body: input.body,
         postedAt: "Just now",
@@ -563,8 +611,71 @@ export function createCommunityReply(threadId: string, input: CreateReplyInput) 
   };
 
   updatedThread.replies = updatedThread.replyItems.length;
-  communityThreads = [updatedThread, ...communityThreads.filter((thread) => thread.id !== threadId)];
-  return delay(updatedThread);
+  return delay(upsertThread(updatedThread));
+}
+
+export function updateCommunityThread(threadId: string, input: UpdateThreadInput) {
+  const existingThread = requireThread(threadId);
+  requireThreadOwner(existingThread, input.authorUserId);
+
+  const updatedThread: ThreadDetail = {
+    ...existingThread,
+    title: input.title,
+    category: input.category,
+    body: input.body,
+    updatedAt: "Just now",
+  };
+
+  return delay(upsertThread(updatedThread));
+}
+
+export function deleteCommunityThread(threadId: string, authorUserId: string) {
+  const existingThread = requireThread(threadId);
+  requireThreadOwner(existingThread, authorUserId);
+  communityThreads = communityThreads.filter((thread) => thread.id !== threadId);
+  return delay(threadId);
+}
+
+export function updateCommunityReply(threadId: string, replyId: string, input: UpdateReplyInput) {
+  const existingThread = requireThread(threadId);
+  const existingReply = existingThread.replyItems.find((reply) => reply.id === replyId);
+  if (!existingReply) {
+    throw new Error("Reply not found.");
+  }
+  requireReplyOwner(existingReply, input.authorUserId);
+
+  const updatedThread: ThreadDetail = {
+    ...existingThread,
+    updatedAt: "Just now",
+    replyItems: existingThread.replyItems.map((reply) =>
+      reply.id === replyId
+        ? {
+            ...reply,
+            body: input.body,
+            postedAt: "Edited just now",
+          }
+        : reply,
+    ),
+  };
+
+  return delay(upsertThread(updatedThread));
+}
+
+export function deleteCommunityReply(threadId: string, replyId: string, authorUserId: string) {
+  const existingThread = requireThread(threadId);
+  const existingReply = existingThread.replyItems.find((reply) => reply.id === replyId);
+  if (!existingReply) {
+    throw new Error("Reply not found.");
+  }
+  requireReplyOwner(existingReply, authorUserId);
+
+  const updatedThread: ThreadDetail = {
+    ...existingThread,
+    updatedAt: "Just now",
+    replyItems: existingThread.replyItems.filter((reply) => reply.id !== replyId),
+  };
+  updatedThread.replies = updatedThread.replyItems.length;
+  return delay(upsertThread(updatedThread));
 }
 
 export function resetCommunityThreads() {

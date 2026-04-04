@@ -11,7 +11,7 @@ import {
   fetchCommunityData,
   type CommunityData,
   type HomePageData,
-  type ThreadSummary,
+  type ThreadDetail,
   updateCommunityThread,
 } from "../data/mock-data";
 import { useAuthStore } from "../state/auth-store";
@@ -23,6 +23,7 @@ const askQuestionSchema = z.object({
 });
 
 type AskQuestionValues = z.infer<typeof askQuestionSchema>;
+
 const interactiveSurfaceCardClass = "transition duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]";
 const interactiveBlockClass = "block transition duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]";
 
@@ -38,7 +39,27 @@ function getAuthorName(firstName: string | undefined, lastName: string | undefin
   return email ?? "RepairHub Member";
 }
 
-export function CommunityPage() {
+function syncThreadIntoCaches(queryClient: ReturnType<typeof useQueryClient>, thread: ThreadDetail) {
+  queryClient.setQueryData(["thread", thread.id], thread);
+  queryClient.setQueryData<CommunityData>(["community"], (current) =>
+    current
+      ? {
+          ...current,
+          threads: [thread, ...current.threads.filter((item) => item.id !== thread.id)],
+        }
+      : current,
+  );
+  queryClient.setQueryData<HomePageData>(["home"], (current) =>
+    current
+      ? {
+          ...current,
+          threads: [thread, ...current.threads.filter((item) => item.id !== thread.id)],
+        }
+      : current,
+  );
+}
+
+export function CommunityPageOwnerTools() {
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -76,23 +97,7 @@ export function CommunityPage() {
         authorUserId: user?.id ?? "",
       }),
     onSuccess: (thread) => {
-      queryClient.setQueryData<CommunityData>(["community"], (current) =>
-        current
-          ? {
-              ...current,
-              threads: [thread, ...current.threads],
-            }
-          : current,
-      );
-      queryClient.setQueryData(["thread", thread.id], thread);
-      queryClient.setQueryData<HomePageData>(["home"], (current) =>
-        current
-          ? {
-              ...current,
-              threads: [thread, ...current.threads],
-            }
-          : current,
-      );
+      syncThreadIntoCaches(queryClient, thread);
       form.reset({
         title: "",
         category: "Electronics",
@@ -102,26 +107,6 @@ export function CommunityPage() {
     },
   });
 
-  function syncThreadCaches(thread: ThreadSummary) {
-    queryClient.setQueryData(["thread", thread.id], thread);
-    queryClient.setQueryData<CommunityData>(["community"], (current) =>
-      current
-        ? {
-            ...current,
-            threads: [thread, ...current.threads.filter((item) => item.id !== thread.id)],
-          }
-        : current,
-    );
-    queryClient.setQueryData<HomePageData>(["home"], (current) =>
-      current
-        ? {
-            ...current,
-            threads: [thread, ...current.threads.filter((item) => item.id !== thread.id)],
-          }
-        : current,
-    );
-  }
-
   const updateThreadMutation = useMutation({
     mutationFn: (values: AskQuestionValues) =>
       updateCommunityThread(editingThreadId ?? "", {
@@ -129,7 +114,7 @@ export function CommunityPage() {
         authorUserId: user?.id ?? "",
       }),
     onSuccess: (thread) => {
-      syncThreadCaches(thread);
+      syncThreadIntoCaches(queryClient, thread);
       setEditingThreadId(null);
       editForm.reset({
         title: "",
@@ -269,11 +254,7 @@ export function CommunityPage() {
               </label>
               {createThreadMutation.error ? <p className="text-sm text-[var(--amber)]">{createThreadMutation.error.message}</p> : null}
               <div className="flex flex-wrap gap-3">
-                <button
-                  className="rounded-full bg-[var(--green)] px-5 py-3 text-sm font-semibold text-white"
-                  disabled={createThreadMutation.isPending}
-                  type="submit"
-                >
+                <button className="rounded-full bg-[var(--green)] px-5 py-3 text-sm font-semibold text-white" disabled={createThreadMutation.isPending} type="submit">
                   {createThreadMutation.isPending ? "Posting..." : "Post Question"}
                 </button>
                 <button
@@ -290,14 +271,87 @@ export function CommunityPage() {
             </form>
           ) : null}
           <div className="space-y-3">
-            {data.threads.map((thread) => (
-              <Link key={thread.id} className={`rounded-[18px] border border-[var(--cream-3)] bg-[var(--cream-2)] p-4 ${interactiveBlockClass}`} to={`/community/thread/${thread.id}`}>
-                <p className="mb-2 text-sm font-semibold text-[var(--ink)]">{thread.title}</p>
-                <p className="text-xs text-[var(--ink-60)]">
-                  {thread.author} · {thread.replies} replies · {thread.updatedAt}
-                </p>
-              </Link>
-            ))}
+            {data.threads.map((thread) =>
+              editingThreadId === thread.id ? (
+                <div key={thread.id} className={`rounded-[18px] border border-[var(--cream-3)] bg-[var(--cream-2)] p-4 ${interactiveSurfaceCardClass}`}>
+                  <form className="space-y-4" onSubmit={editForm.handleSubmit((values) => updateThreadMutation.mutate(values))}>
+                    <label className="block text-sm font-semibold text-[var(--ink-60)]">
+                      Question title
+                      <input className="mt-2 w-full rounded-2xl border border-[var(--cream-3)] bg-white px-4 py-3" {...editForm.register("title")} />
+                      <span className="mt-1 block text-xs text-[var(--amber)]">{editForm.formState.errors.title?.message}</span>
+                    </label>
+                    <label className="block text-sm font-semibold text-[var(--ink-60)]">
+                      Category
+                      <select className="mt-2 w-full rounded-2xl border border-[var(--cream-3)] bg-white px-4 py-3" {...editForm.register("category")}>
+                        <option value="Electronics">Electronics</option>
+                        <option value="Clothing">Clothing</option>
+                        <option value="Furniture">Furniture</option>
+                        <option value="Bikes">Bikes</option>
+                      </select>
+                      <span className="mt-1 block text-xs text-[var(--amber)]">{editForm.formState.errors.category?.message}</span>
+                    </label>
+                    <label className="block text-sm font-semibold text-[var(--ink-60)]">
+                      Details
+                      <textarea className="mt-2 min-h-28 w-full rounded-2xl border border-[var(--cream-3)] bg-white px-4 py-3" {...editForm.register("body")} />
+                      <span className="mt-1 block text-xs text-[var(--amber)]">{editForm.formState.errors.body?.message}</span>
+                    </label>
+                    {updateThreadMutation.error ? <p className="text-sm text-[var(--amber)]">{updateThreadMutation.error.message}</p> : null}
+                    <div className="flex flex-wrap gap-3">
+                      <button className="rounded-full bg-[var(--green)] px-4 py-2 text-sm font-semibold text-white" disabled={updateThreadMutation.isPending} type="submit">
+                        {updateThreadMutation.isPending ? "Saving..." : "Save Question"}
+                      </button>
+                      <button
+                        className="rounded-full border border-[var(--cream-3)] bg-white px-4 py-2 text-sm font-semibold text-[var(--ink-60)]"
+                        type="button"
+                        onClick={() => {
+                          setEditingThreadId(null);
+                          editForm.reset();
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                <div key={thread.id} className={`rounded-[18px] border border-[var(--cream-3)] bg-[var(--cream-2)] p-4 ${interactiveSurfaceCardClass}`}>
+                  <div className="flex items-start justify-between gap-4">
+                    <Link className={`min-w-0 flex-1 ${interactiveBlockClass}`} to={`/community/thread/${thread.id}`}>
+                      <p className="mb-2 text-sm font-semibold text-[var(--ink)]">{thread.title}</p>
+                      <p className="text-xs text-[var(--ink-60)]">
+                        {thread.author} · {thread.replies} replies · {thread.updatedAt}
+                      </p>
+                    </Link>
+                    {thread.authorUserId === user?.id ? (
+                      <div className="flex shrink-0 gap-2">
+                        <button
+                          className="rounded-full border border-[var(--cream-3)] bg-white px-3 py-2 text-xs font-semibold text-[var(--ink-60)]"
+                          type="button"
+                          onClick={() => {
+                            setEditingThreadId(thread.id);
+                            editForm.reset({
+                              title: thread.title,
+                              category: thread.category as AskQuestionValues["category"],
+                              body: thread.body,
+                            });
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="rounded-full border border-[rgba(175,99,18,0.25)] bg-[rgba(175,99,18,0.08)] px-3 py-2 text-xs font-semibold text-[var(--amber)]"
+                          disabled={deleteThreadMutation.isPending}
+                          type="button"
+                          onClick={() => deleteThreadMutation.mutate(thread.id)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ),
+            )}
           </div>
         </div>
         <div className={`surface-card p-6 ${interactiveSurfaceCardClass}`}>
