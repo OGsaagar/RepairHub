@@ -15,6 +15,8 @@ const askQuestionSchema = z.object({
 });
 
 type AskQuestionValues = z.infer<typeof askQuestionSchema>;
+const interactiveSurfaceCardClass = "transition duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]";
+const interactiveBlockClass = "block transition duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]";
 
 function getAuthorName(firstName: string | undefined, lastName: string | undefined, email: string | undefined) {
   if (firstName && lastName) {
@@ -104,21 +106,41 @@ export function CommunityPage() {
         </button>
       </section>
       <section className="grid gap-4 lg:grid-cols-3">
-        {data.tutorials.map((tutorial) => (
-          <div key={tutorial.id} className="surface-card p-5">
-            <p className="mb-2 text-sm font-semibold text-[var(--ink)]">{tutorial.title}</p>
-            <p className="mb-2 text-xs uppercase tracking-[0.25em] text-[var(--ink-40)]">
-              {tutorial.category} · {tutorial.level}
-            </p>
-            <p className="text-sm leading-7 text-[var(--ink-60)]">{tutorial.summary}</p>
-            <p className="mt-4 text-sm font-semibold text-[var(--green)]">
-              {tutorial.duration} · {tutorial.format}
-            </p>
-          </div>
-        ))}
+        {data.tutorials.map((tutorial) =>
+          tutorial.youtubeUrl ? (
+            <a
+              key={tutorial.id}
+              className={`surface-card p-5 ${interactiveBlockClass}`}
+              href={tutorial.youtubeUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <p className="mb-2 text-sm font-semibold text-[var(--ink)]">{tutorial.title}</p>
+              <p className="mb-2 text-xs uppercase tracking-[0.25em] text-[var(--ink-40)]">
+                {tutorial.category} · {tutorial.level}
+              </p>
+              <p className="text-sm leading-7 text-[var(--ink-60)]">{tutorial.summary}</p>
+              <p className="mt-4 text-sm font-semibold text-[var(--green)]">
+                {tutorial.duration} · {tutorial.format}
+              </p>
+              <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--amber)]">Watch on YouTube</p>
+            </a>
+          ) : (
+            <div key={tutorial.id} className={`surface-card p-5 ${interactiveSurfaceCardClass}`}>
+              <p className="mb-2 text-sm font-semibold text-[var(--ink)]">{tutorial.title}</p>
+              <p className="mb-2 text-xs uppercase tracking-[0.25em] text-[var(--ink-40)]">
+                {tutorial.category} · {tutorial.level}
+              </p>
+              <p className="text-sm leading-7 text-[var(--ink-60)]">{tutorial.summary}</p>
+              <p className="mt-4 text-sm font-semibold text-[var(--green)]">
+                {tutorial.duration} · {tutorial.format}
+              </p>
+            </div>
+          ),
+        )}
       </section>
       <section className="grid gap-6 lg:grid-cols-2">
-        <div className="surface-card p-6">
+        <div className={`surface-card p-6 ${interactiveSurfaceCardClass}`}>
           <div className="mb-4 flex items-center justify-between gap-4">
             <h3 className="display text-3xl text-[var(--green)]">Recent Discussions</h3>
             <button
@@ -188,7 +210,7 @@ export function CommunityPage() {
           ) : null}
           <div className="space-y-3">
             {data.threads.map((thread) => (
-              <Link key={thread.id} className="block rounded-[18px] border border-[var(--cream-3)] bg-[var(--cream-2)] p-4" to={`/community/thread/${thread.id}`}>
+              <Link key={thread.id} className={`rounded-[18px] border border-[var(--cream-3)] bg-[var(--cream-2)] p-4 ${interactiveBlockClass}`} to={`/community/thread/${thread.id}`}>
                 <p className="mb-2 text-sm font-semibold text-[var(--ink)]">{thread.title}</p>
                 <p className="text-xs text-[var(--ink-60)]">
                   {thread.author} · {thread.replies} replies · {thread.updatedAt}
@@ -197,13 +219,13 @@ export function CommunityPage() {
             ))}
           </div>
         </div>
-        <div className="surface-card p-6">
+        <div className={`surface-card p-6 ${interactiveSurfaceCardClass}`}>
           <div className="mb-4 flex items-center justify-between">
             <h3 className="display text-3xl text-[var(--green)]">Upcoming Workshops</h3>
           </div>
           <div className="space-y-3">
             {data.events.map((event) => (
-              <Link key={event.id} className="block rounded-[18px] border border-[var(--cream-3)] bg-[var(--card)] p-4" to={`/events/${event.id}`}>
+              <Link key={event.id} className={`rounded-[18px] border border-[var(--cream-3)] bg-[var(--card)] p-4 ${interactiveBlockClass}`} to={`/events/${event.id}`}>
                 <p className="mb-2 text-sm font-semibold text-[var(--ink)]">{event.title}</p>
                 <p className="text-sm text-[var(--ink-60)]">{event.excerpt}</p>
                 <p className="mt-2 text-xs text-[var(--ink-40)]">

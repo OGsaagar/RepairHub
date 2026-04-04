@@ -5,6 +5,8 @@ import { StatCard } from "../components/shared/stat-card";
 import { StatusBadge } from "../components/shared/status-badge";
 import { fetchHomePageData } from "../data/mock-data";
 
+const interactiveSurfaceCardClass = "transition duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]";
+
 export function HomePage() {
   const { data } = useQuery({
     queryKey: ["home"],
@@ -18,7 +20,7 @@ export function HomePage() {
   return (
     <div className="space-y-12">
       <section className="grid gap-8 lg:grid-cols-[1.35fr_1fr]">
-        <div className="space-y-6 rounded-[32px] border border-[var(--cream-3)] bg-[rgba(253,252,249,0.85)] p-8 shadow-[var(--shadow-lg)]">
+        <div className="space-y-6 rounded-[32px]  border border-[var(--cream-3)] bg-[rgba(253,252,249,0.85)] p-8 shadow-[var(--shadow-lg)]">
           <StatusBadge tone="green" label="Sustainable · Community-driven" />
           <h1 className="display max-w-3xl text-5xl leading-none text-[var(--ink)] md:text-7xl">
             Repair.
@@ -59,7 +61,7 @@ export function HomePage() {
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className={`grid gap-4 md:grid-cols-3  `}>
         {data.heroStats.map((stat) => (
           <StatCard key={stat.label} helper="Live MVP marketplace metric" label={stat.label} value={stat.value} />
         ))}
@@ -73,7 +75,7 @@ export function HomePage() {
         />
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {data.categories.map((category) => (
-            <div key={category.name} className="surface-card p-5">
+            <div key={category.name} className={`surface-card cursor-pointer p-5 ${interactiveSurfaceCardClass}`}>
               <p className="display mb-2 text-2xl text-[var(--green)]">{category.name}</p>
               <p className="text-sm text-[var(--ink-60)]">{category.repairers}</p>
             </div>

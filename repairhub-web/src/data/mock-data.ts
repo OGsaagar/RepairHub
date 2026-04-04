@@ -55,6 +55,7 @@ export type TutorialSummary = {
   duration: string;
   format: string;
   summary: string;
+  youtubeUrl?: string;
 };
 
 export type RepairMatch = {
@@ -121,6 +122,10 @@ type CreateReplyInput = {
   authorRole: Exclude<AppRole, "guest">;
 };
 
+function buildYouTubeSearchUrl(title: string) {
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(title)}`;
+}
+
 const homeData: HomePageData = {
   heroStats: [
     { label: "Local repairers", value: "2,840" },
@@ -165,6 +170,7 @@ const homeData: HomePageData = {
       duration: "12 min",
       format: "Video",
       summary: "Safely replace a phone battery with common tools and a simple teardown plan.",
+      youtubeUrl: buildYouTubeSearchUrl("Replace a Phone Battery"),
     },
     {
       id: "denim-seam",
@@ -174,6 +180,7 @@ const homeData: HomePageData = {
       duration: "8 min",
       format: "Video",
       summary: "Repair ripped denim seams with strong thread and durable finishing stitches.",
+      youtubeUrl: buildYouTubeSearchUrl("Mend a Torn Seam"),
     },
     {
       id: "chair-leg",
@@ -181,8 +188,9 @@ const homeData: HomePageData = {
       category: "Furniture",
       level: "Intermediate",
       duration: "15 min",
-      format: "Text",
+      format: "Video",
       summary: "Stabilize loose chair joints without over-clamping or damaging the finish.",
+      youtubeUrl: buildYouTubeSearchUrl("Fix a Wobbly Chair Leg"),
     },
   ],
   threads: [],

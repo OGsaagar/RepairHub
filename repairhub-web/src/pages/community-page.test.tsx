@@ -76,4 +76,16 @@ describe("CommunityPage", () => {
     expect(await screen.findByText("Can I fix my cracked tablet screen at home?")).toBeInTheDocument();
     expect(screen.getByText("Elena A. · 0 replies · Just now")).toBeInTheDocument();
   });
+
+  it("opens video tutorials on YouTube using the same title", async () => {
+    renderPage();
+
+    const tutorialLink = await screen.findByRole("link", { name: /Replace a Phone Battery/i });
+
+    expect(tutorialLink).toHaveAttribute(
+      "href",
+      "https://www.youtube.com/results?search_query=Replace%20a%20Phone%20Battery",
+    );
+    expect(tutorialLink).toHaveAttribute("target", "_blank");
+  });
 });

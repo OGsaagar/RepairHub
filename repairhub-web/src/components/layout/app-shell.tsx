@@ -31,13 +31,13 @@ export function AppShell() {
     <div className="min-h-screen">
       <header className="sticky top-0 z-30 border-b border-[var(--cream-3)] bg-[rgba(246,243,238,0.92)] backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between lg:px-6">
-          <div className="flex items-center gap-3">
+          <NavLink to="/" className="flex items-center gap-3">
             <div className="flex size-11 items-center justify-center rounded-2xl bg-[var(--green)] text-lg font-bold text-white">R</div>
             <div>
               <p className="display text-2xl text-[var(--green)]">RepairHub</p>
               <p className="text-xs uppercase tracking-[0.28em] text-[var(--ink-40)]">Repair. Reuse. Reconnect.</p>
             </div>
-          </div>
+          </NavLink>
           <nav className="flex flex-wrap gap-2">
             {navItems.filter((item) => isVisibleForRole(item, role)).map((item) => (
               <NavLink
