@@ -8,7 +8,8 @@ from apps.repairs.models import Booking
 
 def create_booking_financials(validated_data: dict[str, object]) -> dict[str, Decimal]:
     repair_request = validated_data["repair_request"]
-    subtotal = Decimal(getattr(repair_request, "estimated_max_cost", 95) or 95)
+    selected_quote_amount = Decimal(getattr(repair_request, "selected_quote_amount", 0) or 0)
+    subtotal = selected_quote_amount or Decimal(getattr(repair_request, "estimated_max_cost", 95) or 95)
     platform_fee = (subtotal * Decimal("0.05")).quantize(Decimal("0.01"))
     total = subtotal + platform_fee
     return {

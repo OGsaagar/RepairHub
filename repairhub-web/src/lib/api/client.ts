@@ -15,8 +15,59 @@ export type RepairAnalysisPayload = {
   estimated_hours: number;
 };
 
+export type RepairSelectionStatus = "none" | "pending" | "approved" | "rejected";
+
+export type RepairerProfilePayload = {
+  id: string;
+  user: string;
+  user_email: string;
+  headline: string;
+  bio: string;
+  city: string;
+  shop_name: string;
+  shop_address: string;
+  shop_phone: string;
+  shop_opening_hours: string;
+  service_radius_km: string;
+  rating: string;
+  reviews_count: number;
+  is_online: boolean;
+  latitude: string;
+  longitude: string;
+  verification_status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminRepairerAccountPayload = {
+  id: string;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  full_name: string;
+  role: "repairer";
+  profile_status: "pending" | "active" | "suspended";
+  repairer_profile: RepairerProfilePayload | null;
+  primary_category_id: string | null;
+  primary_category_name: string | null;
+};
+
+export type ServiceCategoryPayload = {
+  id: string;
+  name: string;
+  slug: string;
+  icon: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type RepairRequestPayload = {
   id: string;
+  customer: string;
+  customer_name: string;
+  customer_email: string;
+  category: string | null;
   item_name: string;
   issue_description: string;
   urgency: "standard" | "urgent" | "flexible";
@@ -26,6 +77,16 @@ export type RepairRequestPayload = {
   estimated_min_cost: number;
   estimated_max_cost: number;
   estimated_hours: number;
+  selected_repairer: string | null;
+  selected_repairer_name: string | null;
+  selected_service: string | null;
+  selected_service_title: string | null;
+  selected_quote_amount: string;
+  selection_status: RepairSelectionStatus;
+  customer_selection_reason: string;
+  repairer_response_reason: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type RepairRequestMatch = {
@@ -34,6 +95,10 @@ export type RepairRequestMatch = {
   repairer_name: string;
   repairer_city: string;
   repairer_rating: string;
+  repairer_shop_name?: string;
+  repairer_shop_address?: string;
+  repairer_shop_phone?: string;
+  repairer_shop_opening_hours?: string;
   reviews_count: number;
   service: string;
   service_title: string;
@@ -67,6 +132,25 @@ export type BookingPayload = {
   platform_fee_amount: string;
   total_amount: string;
   payment_status: string;
+};
+
+export type RepairJobPayload = {
+  id: string;
+  repair_request: string;
+  booking: string;
+  customer: string;
+  customer_name: string;
+  repairer: string;
+  repairer_name: string;
+  item_name: string;
+  issue_description: string;
+  quote_amount: string;
+  status: string;
+  reference_code: string;
+  estimated_ready_at: string | null;
+  latest_update: string;
+  created_at: string;
+  updated_at: string;
 };
 
 type FetchOptions = RequestInit & {
@@ -197,6 +281,38 @@ export const api = {
       body: JSON.stringify(payload),
       auth: true,
     }),
+  getMyRepairerProfile: () =>
+    fetchJson<RepairerProfilePayload | null>("/repairer-profiles/me/", {
+      auth: true,
+    }),
+  upsertMyRepairerProfile: (payload: unknown) =>
+    fetchJson<RepairerProfilePayload>("/repairer-profiles/me/", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      auth: true,
+    }),
+  getAdminRepairerAccounts: () =>
+    fetchJson<AdminRepairerAccountPayload[]>("/repairer-profiles/admin/repairer-accounts/", {
+      auth: true,
+    }),
+  adminUpsertRepairerProfile: (payload: unknown) =>
+    fetchJson<RepairerProfilePayload>("/repairer-profiles/admin/upsert-profile/", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      auth: true,
+    }),
+  listServiceCategories: () =>
+    fetchJson<ServiceCategoryPayload[]>("/service-categories/", {
+      auth: true,
+    }),
+  listRepairRequests: () =>
+    fetchJson<RepairRequestPayload[]>("/repair-requests/", {
+      auth: true,
+    }),
+  getRepairRequest: (id: string) =>
+    fetchJson<RepairRequestPayload>(`/repair-requests/${id}/`, {
+      auth: true,
+    }),
   analyzeRepairRequest: (id: string) =>
     fetchJson<{ repair_request: RepairRequestPayload; analysis: RepairAnalysisPayload }>(`/repair-requests/${id}/analyze/`, {
       method: "POST",
@@ -206,8 +322,38 @@ export const api = {
     fetchJson<RepairRequestMatch[]>(`/repair-requests/${id}/matches/`, {
       auth: true,
     }),
+  selectRepairMatch: (id: string, payload: { match_id: string; customer_reason: string }) =>
+    fetchJson<RepairRequestPayload>(`/repair-requests/${id}/select-match/`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      auth: true,
+    }),
+  reviewRepairSelection: (id: string, payload: { decision: "approved" | "rejected"; repairer_reason: string }) =>
+    fetchJson<RepairRequestPayload>(`/repair-requests/${id}/review-selection/`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      auth: true,
+    }),
+  getRepairerQueue: () =>
+    fetchJson<RepairRequestPayload[]>("/repair-requests/repairer-queue/", {
+      auth: true,
+    }),
   createBooking: (payload: unknown) =>
     fetchJson<BookingPayload>("/bookings/", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      auth: true,
+    }),
+  getClientJobs: () =>
+    fetchJson<RepairJobPayload[]>("/jobs/client-jobs/", {
+      auth: true,
+    }),
+  getRepairerJobs: () =>
+    fetchJson<RepairJobPayload[]>("/jobs/repairer-jobs/", {
+      auth: true,
+    }),
+  transitionJob: (id: string, payload: { status: string; latest_update: string }) =>
+    fetchJson<RepairJobPayload>(`/jobs/${id}/transition/`, {
       method: "POST",
       body: JSON.stringify(payload),
       auth: true,

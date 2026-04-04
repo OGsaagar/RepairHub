@@ -2,12 +2,12 @@ import { createBrowserRouter } from "react-router-dom";
 import { AppShell } from "../components/layout/app-shell";
 import { RouteGuard } from "../components/shared/route-guard";
 import { AdminPage } from "../pages/admin-page";
-import { ClientWorkspacePage } from "../pages/client-workspace-page";
+import { ClientWorkspaceLivePage } from "../pages/client-workspace-live-page";
 import { CommunityPage } from "../pages/community-page";
 import { EventPage } from "../pages/event-page";
 import { HomePage } from "../pages/home-page";
 import { LoginPage } from "../pages/login-page";
-import { RepairerDashboardPage } from "../pages/repairer-dashboard-page";
+import { RepairerDashboardLivePage } from "../pages/repairer-dashboard-live-page";
 import { RepairRequestPage } from "../pages/repair-request-page";
 import { ThreadPage } from "../pages/thread-page";
 
@@ -30,7 +30,7 @@ export const router = createBrowserRouter([
         path: "client",
         element: (
           <RouteGuard allowedRoles={["customer"]}>
-            <ClientWorkspacePage />
+            <ClientWorkspaceLivePage />
           </RouteGuard>
         ),
       },
@@ -38,7 +38,7 @@ export const router = createBrowserRouter([
         path: "dashboard",
         element: (
           <RouteGuard allowedRoles={["repairer"]}>
-            <RepairerDashboardPage />
+            <RepairerDashboardLivePage />
           </RouteGuard>
         ),
       },

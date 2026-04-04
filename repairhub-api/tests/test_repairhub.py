@@ -11,7 +11,7 @@ from apps.catalog.models import PricingRule, RepairerService, ServiceCategory
 from apps.payments.models import PayoutLedgerEntry
 from apps.payments.services import create_payout_entry, release_payout
 from apps.repairers.models import RepairerProfile
-from apps.repairs.models import Booking, RepairMatch, RepairRequest
+from apps.repairs.models import Booking, RepairJob, RepairMatch, RepairRequest
 from apps.repairs.services import build_matches
 from apps.rewards.models import RewardLedger
 from apps.rewards.services import award_points
@@ -68,6 +68,17 @@ def test_login_returns_user_payload_with_role():
 
 
 @pytest.mark.django_db
+def test_service_categories_endpoint_includes_default_categories():
+    client = APIClient()
+
+    response = client.get("/api/service-categories/")
+
+    assert response.status_code == 200
+    category_names = {item["name"] for item in response.json()}
+    assert {"Electronics", "Furniture", "Clothing", "Bikes"}.issubset(category_names)
+
+
+@pytest.mark.django_db
 def test_repair_request_create_accepts_category_slug_and_photo_urls():
     user = User.objects.create_user(
         username="requester@example.com",
@@ -109,6 +120,7 @@ def test_match_generation_uses_service_catalog_and_rules():
         city="Brooklyn",
         service_radius_km=Decimal("15.0"),
         rating=Decimal("4.90"),
+        is_online=True,
         verification_status="verified",
     )
     service = RepairerService.objects.create(
@@ -160,6 +172,11 @@ def test_matches_endpoint_rebuilds_stale_invalid_match_cache_rows():
         city="Sydney",
         service_radius_km=Decimal("18.0"),
         rating=Decimal("4.90"),
+        shop_name="Sydney Screen Lab",
+        shop_address="10 Market Street, Sydney NSW 2000",
+        shop_phone="+61 2 9000 1111",
+        shop_opening_hours="Mon-Sat, 9:00 am - 5:00 pm",
+        is_online=True,
         verification_status="verified",
     )
     service = RepairerService.objects.create(
@@ -213,6 +230,195 @@ def test_matches_endpoint_rebuilds_stale_invalid_match_cache_rows():
     assert Decimal(payload[0]["distance_km"]) <= Decimal("18.0")
     assert Decimal(payload[0]["score"]) >= Decimal("0.0")
     assert payload[0]["quote_amount"] == "105.00"
+    assert payload[0]["repairer_shop_name"] == "Sydney Screen Lab"
+    assert payload[0]["repairer_shop_address"] == "10 Market Street, Sydney NSW 2000"
+
+
+@pytest.mark.django_db
+def test_customer_selection_requires_repairer_approval_before_booking():
+    customer = User.objects.create_user(username="customer-approval", email="customer-approval@example.com", password="password123", role="customer", profile_status="active")
+    repairer_user = User.objects.create_user(username="repairer-approval", email="repairer-approval@example.com", password="password123", role="repairer", profile_status="active")
+    category = ServiceCategory.objects.create(name="Furniture", slug="furniture")
+    profile = RepairerProfile.objects.create(
+        user=repairer_user,
+        headline="Furniture specialist",
+        city="Sydney",
+        service_radius_km=Decimal("18.0"),
+        rating=Decimal("4.80"),
+        is_online=True,
+        verification_status="verified",
+    )
+    service = RepairerService.objects.create(
+        repairer=profile,
+        category=category,
+        title="Chair restoration",
+        description="Chair repair and structural reinforcement",
+        min_price=Decimal("90.00"),
+        max_price=Decimal("140.00"),
+        warranty_days=14,
+        turnaround_hours=12,
+    )
+    PricingRule.objects.create(service=service, damage_band="general", urgency="standard", multiplier=Decimal("1.00"), flat_fee=Decimal("10.00"))
+    repair_request = RepairRequest.objects.create(
+        customer=customer,
+        category=category,
+        item_name="Dining Chair",
+        issue_description="The rear leg joint is loose and wobbles under weight.",
+        status="matching",
+        estimated_max_cost=Decimal("120.00"),
+    )
+    match = build_matches(repair_request)[0]
+
+    customer_client = APIClient()
+    customer_client.force_authenticate(user=customer)
+
+    selection_response = customer_client.post(
+        f"/api/repair-requests/{repair_request.id}/select-match/",
+        {
+            "match_id": str(match.id),
+            "customer_reason": "The chair is unsafe to use and I need the joint reinforced before it fails completely.",
+        },
+        format="json",
+    )
+
+    assert selection_response.status_code == 200
+    repair_request.refresh_from_db()
+    assert repair_request.selection_status == RepairRequest.SelectionStatus.PENDING
+    assert repair_request.selected_repairer == profile
+
+    blocked_booking = customer_client.post(
+        "/api/bookings/",
+        {
+            "repair_request": str(repair_request.id),
+            "repairer": str(profile.id),
+            "notes": "Please collect this from the front office.",
+        },
+        format="json",
+    )
+
+    assert blocked_booking.status_code == 400
+    assert blocked_booking.json()["repair_request"][0] == "Repairer approval is required before payment."
+
+    repairer_client = APIClient()
+    repairer_client.force_authenticate(user=repairer_user)
+    approval_response = repairer_client.post(
+        f"/api/repair-requests/{repair_request.id}/review-selection/",
+        {
+            "decision": "approved",
+            "repairer_reason": "I can take this repair and start tomorrow morning.",
+        },
+        format="json",
+    )
+
+    assert approval_response.status_code == 200
+    repair_request.refresh_from_db()
+    assert repair_request.selection_status == RepairRequest.SelectionStatus.APPROVED
+
+    booking_response = customer_client.post(
+        "/api/bookings/",
+        {
+            "repair_request": str(repair_request.id),
+            "repairer": str(profile.id),
+            "notes": "Please collect this from the front office.",
+        },
+        format="json",
+    )
+
+    assert booking_response.status_code == 201
+    job = RepairJob.objects.get(booking_id=booking_response.json()["id"])
+    assert job.status == RepairRequest.Status.BOOKED
+
+    transition_response = repairer_client.post(
+        f"/api/jobs/{job.id}/transition/",
+        {
+            "status": RepairRequest.Status.READY,
+            "latest_update": "Joint repair is finished and the chair is ready for pickup.",
+        },
+        format="json",
+    )
+
+    assert transition_response.status_code == 200
+    repair_request.refresh_from_db()
+    assert repair_request.status == RepairRequest.Status.READY
+
+    client_jobs_response = customer_client.get("/api/jobs/client-jobs/")
+    assert client_jobs_response.status_code == 200
+    assert client_jobs_response.json()[0]["status"] == RepairRequest.Status.READY
+
+
+@pytest.mark.django_db
+def test_repairer_can_reject_selected_request_with_reason():
+    customer = User.objects.create_user(username="customer-reject", email="customer-reject@example.com", password="password123", role="customer", profile_status="active")
+    repairer_user = User.objects.create_user(username="repairer-reject", email="repairer-reject@example.com", password="password123", role="repairer", profile_status="active")
+    category = ServiceCategory.objects.create(name="Bikes", slug="bikes")
+    profile = RepairerProfile.objects.create(
+        user=repairer_user,
+        headline="Bike repair specialist",
+        city="Sydney",
+        service_radius_km=Decimal("18.0"),
+        rating=Decimal("4.90"),
+        is_online=True,
+        verification_status="verified",
+    )
+    service = RepairerService.objects.create(
+        repairer=profile,
+        category=category,
+        title="Brake and wheel service",
+        description="Brake repair and wheel truing",
+        min_price=Decimal("55.00"),
+        max_price=Decimal("95.00"),
+        warranty_days=7,
+        turnaround_hours=8,
+    )
+    PricingRule.objects.create(service=service, damage_band="general", urgency="standard", multiplier=Decimal("1.00"), flat_fee=Decimal("5.00"))
+    repair_request = RepairRequest.objects.create(
+        customer=customer,
+        category=category,
+        item_name="Road Bike",
+        issue_description="Rear wheel is bent and the brake rubs heavily.",
+        status="matching",
+    )
+    match = build_matches(repair_request)[0]
+
+    customer_client = APIClient()
+    customer_client.force_authenticate(user=customer)
+    customer_client.post(
+        f"/api/repair-requests/{repair_request.id}/select-match/",
+        {
+            "match_id": str(match.id),
+            "customer_reason": "I need the wheel checked because I use this bike to commute daily.",
+        },
+        format="json",
+    )
+
+    repairer_client = APIClient()
+    repairer_client.force_authenticate(user=repairer_user)
+    rejection_response = repairer_client.post(
+        f"/api/repair-requests/{repair_request.id}/review-selection/",
+        {
+            "decision": "rejected",
+            "repairer_reason": "The damage needs a frame bench that I do not have in this workshop.",
+        },
+        format="json",
+    )
+
+    assert rejection_response.status_code == 200
+    repair_request.refresh_from_db()
+    assert repair_request.selection_status == RepairRequest.SelectionStatus.REJECTED
+    assert repair_request.repairer_response_reason == "The damage needs a frame bench that I do not have in this workshop."
+
+    blocked_booking = customer_client.post(
+        "/api/bookings/",
+        {
+            "repair_request": str(repair_request.id),
+            "repairer": str(profile.id),
+            "notes": "",
+        },
+        format="json",
+    )
+
+    assert blocked_booking.status_code == 400
+    assert blocked_booking.json()["repair_request"][0] == "Repairer approval is required before payment."
 
 
 @pytest.mark.django_db
@@ -226,6 +432,91 @@ def test_ai_fallback_creates_audit_row(monkeypatch):
 
     assert response["damage_type"] == "Cracked screen + LCD damage"
     assert AIAudit.objects.filter(fallback_used=True).exists()
+
+
+@pytest.mark.django_db
+def test_only_admin_can_manage_repairer_shop_details():
+    repairer_user = User.objects.create_user(
+        username="repairer-profile",
+        email="repairer-profile@example.com",
+        password="password123",
+        role="repairer",
+        profile_status="active",
+    )
+    repairer_client = APIClient()
+    repairer_client.force_authenticate(user=repairer_user)
+
+    forbidden_response = repairer_client.post(
+        "/api/repairer-profiles/me/",
+        {},
+        format="json",
+    )
+
+    assert forbidden_response.status_code == 403
+
+    admin_user = User.objects.create_user(
+        username="admin-profile",
+        email="admin-profile@example.com",
+        password="password123",
+        role="admin",
+        profile_status="active",
+    )
+    admin_client = APIClient()
+    admin_client.force_authenticate(user=admin_user)
+    category = ServiceCategory.objects.create(name="Electronics", slug="electronics")
+
+    accounts_response = admin_client.get("/api/repairer-profiles/admin/repairer-accounts/")
+
+    assert accounts_response.status_code == 200
+    assert accounts_response.json()[0]["username"] == "repairer-profile"
+    assert accounts_response.json()[0]["repairer_profile"] is None
+    assert accounts_response.json()[0]["primary_category_id"] is None
+
+    saved_response = admin_client.post(
+        "/api/repairer-profiles/admin/upsert-profile/",
+        {
+            "user_id": str(repairer_user.id),
+            "category_id": str(category.id),
+            "headline": "Electronics bench",
+            "bio": "Board-level diagnostics and common device repairs.",
+            "city": "Sydney",
+            "shop_name": "Harbour Device Care",
+            "shop_address": "100 Pitt Street, Sydney NSW 2000",
+            "shop_phone": "+61 2 9000 1234",
+            "shop_opening_hours": "Mon-Fri, 9:00 am - 6:00 pm",
+            "service_radius_km": "12.0",
+        },
+        format="json",
+    )
+
+    assert saved_response.status_code == 201
+    assert saved_response.json()["is_online"] is True
+    assert saved_response.json()["shop_name"] == "Harbour Device Care"
+    assert saved_response.json()["verification_status"] == "verified"
+
+    accounts_response = admin_client.get("/api/repairer-profiles/admin/repairer-accounts/")
+    assert accounts_response.status_code == 200
+    assert accounts_response.json()[0]["primary_category_name"] == "Electronics"
+
+    customer = User.objects.create_user(
+        username="customer-category",
+        email="customer-category@example.com",
+        password="password123",
+        role="customer",
+        profile_status="active",
+    )
+    repair_request = RepairRequest.objects.create(
+        customer=customer,
+        category=category,
+        item_name="Tablet",
+        issue_description="Screen has a dead zone after impact.",
+        status="matching",
+    )
+
+    matches = build_matches(repair_request)
+
+    assert len(matches) == 1
+    assert matches[0].repairer.user_id == repairer_user.id
 
 
 @pytest.mark.django_db

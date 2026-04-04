@@ -32,6 +32,12 @@ class RepairRequest(TimeStampedModel):
         PICKUP = "pickup", "Pickup"
         ONSITE = "onsite", "Onsite"
 
+    class SelectionStatus(models.TextChoices):
+        NONE = "none", "None"
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="repair_requests")
     category = models.ForeignKey("catalog.ServiceCategory", on_delete=models.SET_NULL, null=True, blank=True)
@@ -49,6 +55,28 @@ class RepairRequest(TimeStampedModel):
     estimated_min_cost = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     estimated_max_cost = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     estimated_hours = models.PositiveIntegerField(default=0)
+    selected_repairer = models.ForeignKey(
+        "repairers.RepairerProfile",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="selected_repair_requests",
+    )
+    selected_service = models.ForeignKey(
+        "catalog.RepairerService",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="selected_repair_requests",
+    )
+    selected_quote_amount = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    selection_status = models.CharField(
+        max_length=20,
+        choices=SelectionStatus.choices,
+        default=SelectionStatus.NONE,
+    )
+    customer_selection_reason = models.TextField(blank=True)
+    repairer_response_reason = models.TextField(blank=True)
 
 
 class RepairPhoto(TimeStampedModel):

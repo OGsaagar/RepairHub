@@ -1,9 +1,9 @@
-import type { ActiveRepair, JobStatus } from "../../data/mock-data";
+import type { RepairJobPayload } from "../api/client";
 
 export type RepairHubEvent =
   | {
       type: "job.status_changed";
-      payload: { jobId: string; status: JobStatus; latestUpdate: string; eta: string };
+      payload: { jobId: string; status: string; latestUpdate: string; eta: string };
     }
   | {
       type: "message.created";
@@ -11,9 +11,9 @@ export type RepairHubEvent =
     };
 
 export function applyRealtimeEvent(
-  repairs: ActiveRepair[] | undefined,
+  repairs: RepairJobPayload[] | undefined,
   event: RepairHubEvent,
-): ActiveRepair[] {
+): RepairJobPayload[] {
   if (!repairs) {
     return [];
   }
@@ -23,13 +23,11 @@ export function applyRealtimeEvent(
   }
 
   return repairs.map((repair) =>
-    repair.id === event.payload.jobId
+    repair.id === event.payload.jobId || repair.repair_request === event.payload.jobId
       ? {
           ...repair,
           status: event.payload.status,
-          latestUpdate: event.payload.latestUpdate,
-          eta: event.payload.eta,
-          currentStep: Math.min(repair.currentStep + 1, repair.timeline.length - 1),
+          latest_update: event.payload.latestUpdate,
         }
       : repair,
   );

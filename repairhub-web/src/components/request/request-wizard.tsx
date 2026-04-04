@@ -112,6 +112,8 @@ export function RequestWizard() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isSubmittingSelection, setIsSubmittingSelection] = useState(false);
+  const [isRefreshingSelection, setIsRefreshingSelection] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
   const [booking, setBooking] = useState<BookingPayload | null>(null);
   const deferredSortBy = useDeferredValue(sortBy);
@@ -145,6 +147,17 @@ export function RequestWizard() {
   }, [deferredSortBy, matches]);
 
   const selectedMatch = sortedMatches.find((match) => match.id === selectedMatchId) ?? sortedMatches[0] ?? null;
+  const selectionStatus = repairRequest?.selection_status ?? "none";
+  const canConfirmPayment = selectionStatus === "approved";
+  const selectedRepairerName = repairRequest?.selected_repairer_name ?? selectedMatch?.repairer_name ?? "No repairer selected";
+  const selectionStatusLabel =
+    selectionStatus === "pending"
+      ? "Pending repairer review"
+      : selectionStatus === "approved"
+        ? "Approved by repairer"
+        : selectionStatus === "rejected"
+          ? "Rejected by repairer"
+          : "Awaiting customer request";
 
   const onAnalyze = form.handleSubmit(async (values) => {
     setSubmitError(null);
@@ -182,9 +195,69 @@ export function RequestWizard() {
     }
   });
 
+  async function refreshRepairRequestState() {
+    if (!repairRequest) {
+      return;
+    }
+
+    setIsRefreshingSelection(true);
+    setSubmitError(null);
+
+    try {
+      const [liveRequest, liveMatches] = await Promise.all([
+        api.getRepairRequest(repairRequest.id),
+        api.getRepairMatches(repairRequest.id),
+      ]);
+      setRepairRequest(liveRequest);
+      setMatches(liveMatches);
+      setSelectedMatchId((current) => current || liveMatches.find((match) => match.selected)?.id || liveMatches[0]?.id || "");
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "RepairHub could not refresh the repairer decision.");
+    } finally {
+      setIsRefreshingSelection(false);
+    }
+  }
+
+  async function handleSelectionRequest() {
+    if (!repairRequest || !selectedMatch) {
+      setSubmitError("Choose a repairer before requesting approval.");
+      return;
+    }
+
+    const customerReason = (form.getValues("notes") ?? "").trim();
+    if (customerReason.length < 10) {
+      setSubmitError("Add a clear reason for the repairer before requesting approval.");
+      return;
+    }
+
+    setSubmitError(null);
+    setIsSubmittingSelection(true);
+
+    try {
+      const [updatedRequest, liveMatches] = await Promise.all([
+        api.selectRepairMatch(repairRequest.id, {
+          match_id: selectedMatch.id,
+          customer_reason: customerReason,
+        }),
+        api.getRepairMatches(repairRequest.id),
+      ]);
+      setRepairRequest(updatedRequest);
+      setMatches(liveMatches);
+      setSelectedMatchId(selectedMatch.id);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "RepairHub could not send the request to the repairer.");
+    } finally {
+      setIsSubmittingSelection(false);
+    }
+  }
+
   async function handleBooking() {
     if (!repairRequest || !selectedMatch) {
       setSubmitError("Choose a repairer before confirming the booking.");
+      return;
+    }
+    if (!canConfirmPayment) {
+      setSubmitError("Confirm & Pay unlocks only after the selected repairer approves the item.");
       return;
     }
 
@@ -201,6 +274,7 @@ export function RequestWizard() {
         notes: form.getValues("notes") ?? "",
       });
       setBooking(response);
+      setRepairRequest((current) => (current ? { ...current, status: "booked" } : current));
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Booking could not be created.");
     } finally {
@@ -336,7 +410,7 @@ export function RequestWizard() {
               </p>
             ) : (
               <p className="mb-6 text-sm leading-7 text-[var(--ink-60)]">
-                No repairers matched yet. You can still go back and adjust the category or urgency.
+                No repairer is available for this category right now. You can still go back and adjust the category or urgency.
               </p>
             )}
             <div className="flex justify-end gap-3">
@@ -378,6 +452,18 @@ export function RequestWizard() {
                       {Number.parseFloat(match.repairer_rating).toFixed(1)} rating · {match.reviews_count} reviews · {parseNumber(match.distance_km).toFixed(1)} km · {match.repairer_city}
                     </p>
                     <p className="mb-2 text-sm text-[var(--ink-60)]">{match.service_title}</p>
+                    {match.repairer_shop_name || match.repairer_shop_address ? (
+                      <p className="mb-2 text-sm text-[var(--ink-60)]">
+                        {match.repairer_shop_name ? `${match.repairer_shop_name} · ` : ""}
+                        {match.repairer_shop_address ?? ""}
+                      </p>
+                    ) : null}
+                    {match.repairer_shop_phone || match.repairer_shop_opening_hours ? (
+                      <p className="mb-2 text-sm text-[var(--ink-60)]">
+                        {match.repairer_shop_phone ? `${match.repairer_shop_phone} · ` : ""}
+                        {match.repairer_shop_opening_hours ?? ""}
+                      </p>
+                    ) : null}
                     <div className="flex flex-wrap gap-2">
                       {[match.ranking_reason, `${match.eta_hours}h ETA`, `${match.warranty_days}-day warranty`].map((detail) => (
                         <span key={detail} className="rounded-full bg-[var(--cream-2)] px-3 py-1 text-xs font-semibold text-[var(--ink-60)]">
@@ -406,9 +492,9 @@ export function RequestWizard() {
             </div>
           ) : (
             <div className="surface-card rounded-[24px] p-6">
-              <h4 className="display mb-3 text-3xl text-[var(--green)]">No live matches yet</h4>
+              <h4 className="display mb-3 text-3xl text-[var(--green)]">No repairer available</h4>
               <p className="text-sm leading-7 text-[var(--ink-60)]">
-                The repair request was analyzed successfully, but no repairers matched the current criteria. Try another category or reduce urgency.
+                The repair request was analyzed successfully, but no repairers in the database currently match this repair category and availability.
               </p>
             </div>
           )}
@@ -421,10 +507,25 @@ export function RequestWizard() {
             <div className="surface-card space-y-5 p-6">
               <div>
                 <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-[var(--ink-40)]">Selected Repairer</p>
-                <h3 className="display mb-4 text-3xl text-[var(--green)]">{selectedMatch.repairer_name}</h3>
+                <h3 className="display mb-4 text-3xl text-[var(--green)]">{selectedRepairerName}</h3>
                 <p className="text-sm text-[var(--ink-60)]">
                   {selectedMatch.service_title} · {selectedMatch.repairer_city} · {selectedMatch.warranty_days}-day warranty
                 </p>
+                {selectedMatch.repairer_shop_name || selectedMatch.repairer_shop_address ? (
+                  <p className="mt-2 text-sm text-[var(--ink-60)]">
+                    {selectedMatch.repairer_shop_name ? `${selectedMatch.repairer_shop_name} · ` : ""}
+                    {selectedMatch.repairer_shop_address ?? ""}
+                  </p>
+                ) : null}
+                {selectedMatch.repairer_shop_phone || selectedMatch.repairer_shop_opening_hours ? (
+                  <p className="mt-2 text-sm text-[var(--ink-60)]">
+                    {selectedMatch.repairer_shop_phone ? `${selectedMatch.repairer_shop_phone} · ` : ""}
+                    {selectedMatch.repairer_shop_opening_hours ?? ""}
+                  </p>
+                ) : null}
+              </div>
+              <div className="rounded-[20px] border border-[var(--cream-3)] bg-[var(--cream-2)] p-4 text-sm text-[var(--ink-60)]">
+                <span className="font-semibold text-[var(--ink)]">Repairer decision:</span> {selectionStatusLabel}
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="block text-sm font-semibold text-[var(--ink-60)]">
@@ -432,21 +533,75 @@ export function RequestWizard() {
                   <input className="mt-2 w-full rounded-2xl border border-[var(--cream-3)] bg-white px-4 py-3" type="date" {...form.register("preferredDate")} />
                 </label>
                 <label className="block text-sm font-semibold text-[var(--ink-60)]">
-                  Notes for Repairer
-                  <textarea className="mt-2 min-h-32 w-full rounded-2xl border border-[var(--cream-3)] bg-white px-4 py-3" placeholder="Any special instructions..." {...form.register("notes")} />
+                  Reason for Repairer Review
+                  <textarea
+                    className="mt-2 min-h-32 w-full rounded-2xl border border-[var(--cream-3)] bg-white px-4 py-3"
+                    placeholder="Explain clearly why you want this repairer to take the item and any important repair notes."
+                    {...form.register("notes")}
+                  />
                 </label>
               </div>
+              {repairRequest?.customer_selection_reason ? (
+                <div className="rounded-[20px] bg-[var(--cream-2)] p-5 text-sm text-[var(--ink-60)]">
+                  <span className="font-semibold text-[var(--ink)]">Customer reason sent:</span> {repairRequest.customer_selection_reason}
+                </div>
+              ) : null}
+              {selectionStatus === "pending" ? (
+                <div className="rounded-[20px] bg-[var(--cream-2)] p-5 text-sm text-[var(--ink-60)]">
+                  Waiting for the selected repairer to approve or reject this item. Payment stays locked until they respond.
+                </div>
+              ) : null}
+              {selectionStatus === "approved" ? (
+                <div className="rounded-[20px] bg-[var(--green-light)] p-5 text-sm text-[var(--green)]">
+                  This repairer approved the item. You can now continue to payment.
+                </div>
+              ) : null}
+              {selectionStatus === "rejected" ? (
+                <div className="rounded-[20px] bg-[rgba(175,99,18,0.12)] p-5 text-sm text-[var(--amber)]">
+                  Rejected by repairer. {repairRequest?.repairer_response_reason || "No reason was provided."}
+                </div>
+              ) : null}
               {booking ? (
                 <div className="rounded-[20px] bg-[var(--green-light)] p-5 text-sm text-[var(--green)]">
                   Booking created. RepairHub reference: <span className="font-semibold">{booking.id}</span>. Payment status: {booking.payment_status}.
                 </div>
               ) : null}
               {submitError ? <p className="rounded-[20px] bg-[rgba(175,99,18,0.12)] p-4 text-sm text-[var(--amber)]">{submitError}</p> : null}
+              <div className="flex justify-end gap-3">
+                <button className="rounded-full border border-[var(--cream-3)] px-5 py-3 text-sm font-semibold text-[var(--ink-60)]" onClick={() => setStep(3)} type="button">
+                  Back
+                </button>
+                {selectionStatus === "pending" || selectionStatus === "approved" ? (
+                  <button
+                    className="rounded-full border border-[var(--cream-3)] px-5 py-3 text-sm font-semibold text-[var(--ink-60)]"
+                    disabled={isRefreshingSelection}
+                    onClick={() => void refreshRepairRequestState()}
+                    type="button"
+                  >
+                    {isRefreshingSelection ? "Refreshing..." : "Refresh Status"}
+                  </button>
+                ) : (
+                  <button
+                    className="rounded-full bg-[var(--green)] px-5 py-3 text-sm font-semibold text-white"
+                    disabled={isSubmittingSelection}
+                    onClick={() => void handleSelectionRequest()}
+                    type="button"
+                  >
+                    {isSubmittingSelection ? "Sending..." : selectionStatus === "rejected" ? "Send Again" : "Request Approval"}
+                  </button>
+                )}
+              </div>
             </div>
             <div className="surface-card p-6">
               <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-[var(--ink-40)]">Secure Checkout</p>
-              <div className="mb-5 rounded-[20px] border border-[var(--green-border)] bg-[var(--green-light)]/70 p-4 text-sm text-[var(--green)]">
-                This now creates a real booking record in Django. Stripe Elements remains optional in local development until a publishable key is configured.
+              <div className={`mb-5 rounded-[20px] border p-4 text-sm ${canConfirmPayment ? "border-[var(--green-border)] bg-[var(--green-light)]/70 text-[var(--green)]" : "border-[var(--cream-3)] bg-[var(--cream-2)] text-[var(--ink-60)]"}`}>
+                {canConfirmPayment
+                  ? "Repairer approval received. Payment is unlocked and will create the live booking record in Django."
+                  : selectionStatus === "pending"
+                    ? "Payment is locked while the repairer reviews this item."
+                    : selectionStatus === "rejected"
+                      ? "This repairer rejected the item. Choose another repairer to continue."
+                      : "Send the item to the repairer for approval before payment becomes available."}
               </div>
               <div className="space-y-3 text-sm text-[var(--ink-60)]">
                 <div className="flex items-center justify-between">
@@ -472,11 +627,13 @@ export function RequestWizard() {
                 )}
               </div>
               <div className="mt-6 flex justify-end gap-3">
-                <button className="rounded-full border border-[var(--cream-3)] px-5 py-3 text-sm font-semibold text-[var(--ink-60)]" onClick={() => setStep(3)} type="button">
-                  Back
-                </button>
-                <button className="rounded-full bg-[var(--green)] px-5 py-3 text-sm font-semibold text-white" disabled={isBooking} onClick={() => void handleBooking()} type="button">
-                  {isBooking ? "Creating booking..." : booking ? "Booking Created" : "Confirm & Pay"}
+                <button
+                  className="rounded-full bg-[var(--green)] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-[var(--ink-40)]"
+                  disabled={isBooking || !canConfirmPayment || Boolean(booking)}
+                  onClick={() => void handleBooking()}
+                  type="button"
+                >
+                  {isBooking ? "Creating booking..." : booking ? "Booking Created" : canConfirmPayment ? "Confirm & Pay" : "Waiting for Approval"}
                 </button>
               </div>
             </div>

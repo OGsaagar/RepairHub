@@ -1,12 +1,14 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { realtimeStatusEvent } from "../data/mock-data";
+import type { RepairJobPayload } from "../lib/api/client";
 import { applyRealtimeEvent, RepairHubSocket } from "../lib/realtime/socket";
 
 type ClientWorkspaceData = {
-  summary: unknown;
-  activeRepairs: Parameters<typeof applyRealtimeEvent>[0];
-  pastRepairs: unknown[];
+  repairRequests: unknown[];
+  approvalQueue: unknown[];
+  activeJobs: RepairJobPayload[];
+  completedJobs: RepairJobPayload[];
 };
 
 export function useRealtimeBridge() {
@@ -19,7 +21,7 @@ export function useRealtimeBridge() {
         current
           ? {
               ...current,
-              activeRepairs: applyRealtimeEvent(current.activeRepairs, event),
+              activeJobs: applyRealtimeEvent(current.activeJobs, event),
             }
           : current,
       );
