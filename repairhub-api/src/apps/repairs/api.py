@@ -206,6 +206,7 @@ class RepairJobSerializer(serializers.ModelSerializer):
     issue_description = serializers.CharField(source="booking.repair_request.issue_description", read_only=True)
     quote_amount = serializers.DecimalField(source="booking.subtotal_amount", max_digits=8, decimal_places=2, read_only=True)
     repair_request = serializers.UUIDField(source="booking.repair_request.id", read_only=True)
+    payment_status = serializers.CharField(source="booking.payment_status", read_only=True)
     customer_name = serializers.SerializerMethodField()
     repairer_name = serializers.SerializerMethodField()
 
@@ -230,6 +231,7 @@ class RepairJobSerializer(serializers.ModelSerializer):
             "item_name",
             "issue_description",
             "quote_amount",
+            "payment_status",
             "status",
             "reference_code",
             "estimated_ready_at",
@@ -258,6 +260,38 @@ class RepairerDecisionSerializer(serializers.Serializer):
         if attrs["decision"] == "rejected" and not attrs.get("repairer_reason", "").strip():
             raise serializers.ValidationError({"repairer_reason": "A rejection reason is required."})
         return attrs
+
+
+def ensure_booking_and_job_for_request(repair_request: RepairRequest) -> tuple[Booking, RepairJob]:
+    if repair_request.selected_repairer is None:
+        raise ValidationError({"detail": "No repairer has been selected for this request yet."})
+
+    booking_defaults = {
+        "repairer": repair_request.selected_repairer,
+        "scheduled_for": None,
+        "notes": repair_request.customer_selection_reason,
+        "payment_status": Booking.PaymentStatus.PENDING,
+        **create_booking_financials({"repair_request": repair_request}),
+    }
+    booking, created_booking = Booking.objects.get_or_create(
+        repair_request=repair_request,
+        defaults=booking_defaults,
+    )
+    if not created_booking and booking.repairer_id != repair_request.selected_repairer_id:
+        booking.repairer = repair_request.selected_repairer
+        booking.save(update_fields=["repairer", "updated_at"])
+
+    job, _ = RepairJob.objects.get_or_create(
+        booking=booking,
+        defaults={
+            "customer": repair_request.customer,
+            "repairer": booking.repairer,
+            "status": RepairRequest.Status.BOOKED,
+            "reference_code": f"RH-{str(uuid4().int)[:6]}",
+            "latest_update": "Repair approved and waiting for the repairer to start active work.",
+        },
+    )
+    return booking, job
 
 
 class RepairRequestViewSet(viewsets.ModelViewSet):
@@ -289,10 +323,22 @@ class RepairRequestViewSet(viewsets.ModelViewSet):
     def analyze(self, request, pk=None):
         repair_request = self.get_object()
         analysis_payload = analyze_damage(
+            category_name=repair_request.category.name if repair_request.category else None,
             item_name=repair_request.item_name,
             issue_description=repair_request.issue_description,
             photo_urls=[photo.image_url for photo in repair_request.photos.all()],
         )
+        if not analysis_payload.get("is_consistent", True):
+            repair_request.status = RepairRequest.Status.SUBMITTED
+            repair_request.save(update_fields=["status", "updated_at"])
+            raise ValidationError(
+                {
+                    "detail": (
+                        analysis_payload.get("consistency_message")
+                        or "These details should be related to each other. Please review the category, item, description, and uploaded photo."
+                    )
+                }
+            )
         analysis = attach_analysis(repair_request, analysis_payload)
         repair_request.status = RepairRequest.Status.MATCHING
         repair_request.save(update_fields=["status", "updated_at"])
@@ -369,9 +415,37 @@ class RepairRequestViewSet(viewsets.ModelViewSet):
             RepairRequest.SelectionStatus.APPROVED if approved else RepairRequest.SelectionStatus.REJECTED
         )
         repair_request.repairer_response_reason = serializer.validated_data.get("repairer_reason", "")
-        repair_request.save(update_fields=["selection_status", "repairer_response_reason", "updated_at"])
+        if approved:
+            ensure_booking_and_job_for_request(repair_request)
+            repair_request.status = RepairRequest.Status.BOOKED
+        update_fields = ["selection_status", "repairer_response_reason", "updated_at"]
+        if approved:
+            update_fields.insert(2, "status")
+        repair_request.save(update_fields=update_fields)
         repair_request.refresh_from_db()
         return Response(self.get_serializer(repair_request).data, status=status.HTTP_200_OK)
+
+    @decorators.action(detail=True, methods=["post"], url_path="start-active-work")
+    def start_active_work(self, request, pk=None):
+        repair_request = self.get_object()
+        if repair_request.selected_repairer is None:
+            raise ValidationError({"detail": "No repairer has been selected for this request yet."})
+        if repair_request.selection_status != RepairRequest.SelectionStatus.APPROVED:
+            raise ValidationError({"detail": "Only approved repair items can move into active work."})
+        if request.user.role not in {User.Role.REPAIRER, User.Role.ADMIN}:
+            raise PermissionDenied("Only repairers can start active work.")
+        if request.user.role == User.Role.REPAIRER and repair_request.selected_repairer.user_id != request.user.id:
+            raise PermissionDenied("You can only start active work for your own approved items.")
+
+        _, job = ensure_booking_and_job_for_request(repair_request)
+        if job.status not in {RepairRequest.Status.BOOKED, RepairRequest.Status.AWAITING_DROPOFF, RepairRequest.Status.IN_REPAIR}:
+            raise ValidationError({"detail": "This repair item can no longer move into active work."})
+        if job.status != RepairRequest.Status.IN_REPAIR:
+            latest_update = request.data.get("latest_update", "") or "Repairer started active work on the item."
+            transition_job(job, RepairRequest.Status.IN_REPAIR, latest_update)
+            repair_request.status = RepairRequest.Status.IN_REPAIR
+            repair_request.save(update_fields=["status", "updated_at"])
+        return Response(RepairJobSerializer(job).data, status=status.HTTP_200_OK)
 
     @decorators.action(detail=False, methods=["get"], url_path="repairer-queue")
     def repairer_queue(self, request):
@@ -418,7 +492,35 @@ class BookingViewSet(viewsets.ModelViewSet):
             reference_code=f"RH-{str(uuid4().int)[:6]}",
             latest_update="Booking confirmed and awaiting dropoff scheduling.",
         )
-        create_payout_entry(booking)
+
+    @decorators.action(detail=True, methods=["post"], url_path="pay")
+    def pay(self, request, pk=None):
+        booking = self.get_object()
+        if request.user.role not in {User.Role.CUSTOMER, User.Role.ADMIN}:
+            raise PermissionDenied("Only customers can complete payment.")
+        if request.user.role == User.Role.CUSTOMER and booking.repair_request.customer_id != request.user.id:
+            raise PermissionDenied("You can only pay for your own repair booking.")
+        job = getattr(booking, "job", None)
+        if job is None:
+            raise ValidationError({"detail": "This booking does not have a repair job yet."})
+        if job.status != RepairRequest.Status.READY:
+            raise ValidationError({"detail": "Payment is unlocked only after the repairer marks the item completed."})
+        if booking.payment_status == Booking.PaymentStatus.PAID:
+            raise ValidationError({"detail": "This repair has already been paid."})
+
+        booking.payment_status = Booking.PaymentStatus.PAID
+        booking.save(update_fields=["payment_status", "updated_at"])
+        if not booking.payout_entries.exists():
+            create_payout_entry(booking)
+
+        job.status = RepairRequest.Status.COMPLETED
+        job.latest_update = "Customer payment received. Repair marked as completed."
+        job.save(update_fields=["status", "latest_update", "updated_at"])
+
+        repair_request = booking.repair_request
+        repair_request.status = RepairRequest.Status.COMPLETED
+        repair_request.save(update_fields=["status", "updated_at"])
+        return Response(self.get_serializer(booking).data, status=status.HTTP_200_OK)
 
 
 class RepairJobViewSet(viewsets.ModelViewSet):
@@ -453,11 +555,11 @@ class RepairJobViewSet(viewsets.ModelViewSet):
         if request.user.role == User.Role.REPAIRER and job.repairer.user_id != request.user.id:
             raise PermissionDenied("You can only update your own jobs.")
         if status_value not in allowed_statuses:
-            raise ValidationError({"status": "Repairers can only move jobs to In repair, Ready, or Collected."})
+            raise ValidationError({"status": "Repairers can only move jobs to In repair, Completed, or Collected."})
         if not latest_update:
             latest_update = {
                 RepairRequest.Status.IN_REPAIR: "Repairer marked the item as in repair.",
-                RepairRequest.Status.READY: "Repairer marked the item as ready for pickup or delivery.",
+                RepairRequest.Status.READY: "Repairer marked the repair work as completed and waiting for customer payment.",
                 RepairRequest.Status.COLLECTED: "Repairer confirmed the repaired item has been collected.",
             }[status_value]
         transition_job(job, status_value, latest_update)

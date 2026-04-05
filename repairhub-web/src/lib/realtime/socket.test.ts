@@ -15,6 +15,7 @@ describe("applyRealtimeEvent", () => {
         item_name: "iPhone 14 Pro",
         issue_description: "Cracked screen",
         quote_amount: "95.00",
+        payment_status: "pending",
         status: "in_repair",
         reference_code: "RH-1001",
         estimated_ready_at: null,

@@ -33,8 +33,6 @@ function getAuthorName(firstName: string | undefined, lastName: string | undefin
 
   return email ?? "RepairHub Member";
 }
-*/
-
 export function ThreadPage() {
   const { threadId = "" } = useParams();
   const queryClient = useQueryClient();
@@ -163,3 +161,4 @@ export function ThreadPage() {
     </div>
   );
 }
+*/

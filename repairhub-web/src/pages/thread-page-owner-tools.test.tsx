@@ -89,7 +89,11 @@ describe("ThreadPageOwnerTools", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
-    expect(screen.queryByText("Inspect the brake pads for glazing, lightly sand them, and wipe the rim with isopropyl alcohol to remove any oily residue.")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.queryByText("Inspect the brake pads for glazing, lightly sand them, and wipe the rim with isopropyl alcohol to remove any oily residue."),
+      ).not.toBeInTheDocument();
+    });
 
     await waitFor(() => {
       const communityData = queryClient.getQueryData<CommunityData>(["community"]);

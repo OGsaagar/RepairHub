@@ -58,6 +58,7 @@ describe("AppShell navigation", () => {
 
     expect(screen.getByRole("link", { name: "Request Repair" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Client Workspace" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open profile for Customer" })).toHaveAttribute("href", "/profile");
     expect(screen.queryByRole("link", { name: "Repairer Dashboard" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Admin" })).not.toBeInTheDocument();
   });

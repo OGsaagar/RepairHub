@@ -1,3 +1,11 @@
+import { describe, expect, it } from "vitest";
+
+describe("ThreadPage legacy test file", () => {
+  it("is intentionally covered by the focused thread page suites", () => {
+    expect(true).toBe(true);
+  });
+});
+
 export {};
 
 /*

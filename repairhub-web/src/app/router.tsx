@@ -7,6 +7,7 @@ import { CommunityPage } from "../pages/community-page";
 import { EventPage } from "../pages/event-page";
 import { HomePage } from "../pages/home-page";
 import { LoginPage } from "../pages/login-page";
+import { ProfilePage } from "../pages/profile-page";
 import { RepairerDashboardLivePage } from "../pages/repairer-dashboard-live-page";
 import { RepairRequestPage } from "../pages/repair-request-page";
 import { ThreadPage } from "../pages/thread-page";
@@ -31,6 +32,14 @@ export const router = createBrowserRouter([
         element: (
           <RouteGuard allowedRoles={["customer"]}>
             <ClientWorkspaceLivePage />
+          </RouteGuard>
+        ),
+      },
+      {
+        path: "profile",
+        element: (
+          <RouteGuard allowedRoles={["customer", "repairer", "admin"]}>
+            <ProfilePage />
           </RouteGuard>
         ),
       },

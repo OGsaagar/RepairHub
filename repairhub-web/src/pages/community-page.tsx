@@ -1,3 +1,6 @@
+export { CommunityPageOwnerTools as CommunityPage } from "./community-page-owner-tools";
+
+/*
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -37,7 +40,6 @@ function getAuthorName(firstName: string | undefined, lastName: string | undefin
 
   return email ?? "RepairHub Member";
 }
-
 export function CommunityPage() {
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
@@ -320,3 +322,4 @@ export function CommunityPage() {
     </div>
   );
 }
+*/

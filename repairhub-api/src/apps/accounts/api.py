@@ -13,6 +13,28 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ("id", "email", "first_name", "last_name", "role", "profile_status")
 
 
+class UserProfileUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ("email", "first_name", "last_name")
+
+    def validate_email(self, value):
+        normalized_email = value.lower()
+        if User.objects.exclude(pk=self.instance.pk).filter(email__iexact=normalized_email).exists():
+            msg = "A user with this email already exists."
+            raise serializers.ValidationError(msg)
+        return normalized_email
+
+    def update(self, instance, validated_data):
+        email = validated_data.get("email", instance.email).lower()
+        instance.email = email
+        instance.username = email
+        instance.first_name = validated_data.get("first_name", instance.first_name)
+        instance.last_name = validated_data.get("last_name", instance.last_name)
+        instance.save(update_fields=["email", "username", "first_name", "last_name", "updated_at"])
+        return instance
+
+
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
 
@@ -52,6 +74,12 @@ class UserProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        return Response(UserSerializer(request.user).data)
+
+    def patch(self, request):
+        serializer = UserProfileUpdateSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
         return Response(UserSerializer(request.user).data)
 
 

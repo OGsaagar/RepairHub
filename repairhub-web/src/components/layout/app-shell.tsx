@@ -26,6 +26,7 @@ export function AppShell() {
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const clearSession = useAuthStore((state) => state.clearSession);
+  const profileLabel = user?.first_name || user?.email || "Profile";
 
   return (
     <div className="min-h-screen">
@@ -56,10 +57,14 @@ export function AppShell() {
           <div className="flex items-center gap-3">
             {isAuthenticated && user ? (
               <>
-                <div className="text-right">
+                <NavLink
+                  aria-label={`Open profile for ${profileLabel}`}
+                  className="rounded-2xl px-3 py-2 text-right transition hover:bg-[var(--cream-2)]"
+                  to="/profile"
+                >
                   <p className="text-sm font-semibold text-[var(--ink)]">{user.first_name || user.email}</p>
                   <p className="text-xs uppercase tracking-[0.25em] text-[var(--ink-40)]">{role}</p>
-                </div>
+                </NavLink>
                 <button
                   className="rounded-full border border-[var(--cream-3)] bg-[var(--card)] px-4 py-2 text-sm font-semibold text-[var(--ink-60)]"
                   type="button"

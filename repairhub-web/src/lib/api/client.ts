@@ -145,6 +145,7 @@ export type RepairJobPayload = {
   item_name: string;
   issue_description: string;
   quote_amount: string;
+  payment_status: string;
   status: string;
   reference_code: string;
   estimated_ready_at: string | null;
@@ -263,11 +264,21 @@ export const api = {
   register: (payload: unknown) => fetchJson<AuthUser>("/auth/register/", { method: "POST", body: JSON.stringify(payload) }),
   login: (payload: unknown) => fetchJson<AuthTokens>("/auth/login/", { method: "POST", body: JSON.stringify(payload) }),
   refresh: (payload: unknown) => fetchJson("/auth/refresh/", { method: "POST", body: JSON.stringify(payload) }),
+  getCurrentProfile: () =>
+    fetchJson<AuthUser>("/auth/me/", {
+      auth: true,
+    }),
   getProfile: (accessToken: string) =>
     fetchJson<AuthUser>("/auth/me/", {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
+    }),
+  updateMyProfile: (payload: Pick<AuthUser, "email" | "first_name" | "last_name">) =>
+    fetchJson<AuthUser>("/auth/me/", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+      auth: true,
     }),
   getSignedUpload: (payload: { timestamp: string; folder: string }) =>
     fetchJson<SignedUploadResponse>("/uploads/signed/", {
@@ -334,6 +345,11 @@ export const api = {
       body: JSON.stringify(payload),
       auth: true,
     }),
+  startActiveWork: (id: string) =>
+    fetchJson<RepairJobPayload>(`/repair-requests/${id}/start-active-work/`, {
+      method: "POST",
+      auth: true,
+    }),
   getRepairerQueue: () =>
     fetchJson<RepairRequestPayload[]>("/repair-requests/repairer-queue/", {
       auth: true,
@@ -342,6 +358,11 @@ export const api = {
     fetchJson<BookingPayload>("/bookings/", {
       method: "POST",
       body: JSON.stringify(payload),
+      auth: true,
+    }),
+  payBooking: (id: string) =>
+    fetchJson<BookingPayload>(`/bookings/${id}/pay/`, {
+      method: "POST",
       auth: true,
     }),
   getClientJobs: () =>

@@ -1,42 +1,54 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "../components/shared/page-header";
 import { StatCard } from "../components/shared/stat-card";
 import { chatMessages } from "../data/mock-data";
 import { api, type RepairJobPayload, type RepairRequestPayload } from "../lib/api/client";
+import { formatRepairStatusLabel, isAwaitingActiveWork } from "../lib/repairs/status";
 import { useAuthStore } from "../state/auth-store";
 
 type ClientWorkspaceView = {
   repairRequests: RepairRequestPayload[];
   approvalQueue: RepairRequestPayload[];
+  awaitingActiveWorkJobs: RepairJobPayload[];
   activeJobs: RepairJobPayload[];
   completedJobs: RepairJobPayload[];
 };
 
-function formatStatusLabel(value: string) {
-  return value.replaceAll("_", " ");
-}
-
 async function fetchClientWorkspaceView(): Promise<ClientWorkspaceView> {
   const [repairRequests, jobs] = await Promise.all([api.listRepairRequests(), api.getClientJobs()]);
-  const bookedRequestIds = new Set(jobs.map((job) => job.repair_request));
+  const awaitingActiveWorkJobs = jobs.filter((job) => isAwaitingActiveWork(job.status));
+  const activeOrCompletedRequestIds = new Set(
+    jobs.filter((job) => !isAwaitingActiveWork(job.status)).map((job) => job.repair_request),
+  );
 
   return {
     repairRequests,
     approvalQueue: repairRequests.filter(
       (repairRequest) =>
         (repairRequest.selected_repairer || repairRequest.selection_status !== "none") &&
-        !bookedRequestIds.has(repairRequest.id),
+        !activeOrCompletedRequestIds.has(repairRequest.id),
     ),
-    activeJobs: jobs.filter((job) => !["collected", "completed"].includes(job.status)),
+    awaitingActiveWorkJobs,
+    activeJobs: jobs.filter((job) => !isAwaitingActiveWork(job.status) && !["collected", "completed"].includes(job.status)),
     completedJobs: jobs.filter((job) => ["collected", "completed"].includes(job.status)),
   };
 }
 
 export function ClientWorkspaceLivePage() {
+  const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const { data } = useQuery({
     queryKey: ["client-workspace"],
     queryFn: fetchClientWorkspaceView,
+  });
+  const payMutation = useMutation({
+    mutationFn: (bookingId: string) => api.payBooking(bookingId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["client-workspace"] }),
+        queryClient.invalidateQueries({ queryKey: ["repairer-dashboard"] }),
+      ]);
+    },
   });
 
   if (!data) {
@@ -45,6 +57,9 @@ export function ClientWorkspaceLivePage() {
 
   const pendingApprovals = data.approvalQueue.filter((request) => request.selection_status === "pending").length;
   const approvedAwaitingPayment = data.approvalQueue.filter((request) => request.selection_status === "approved").length;
+  const awaitingActiveWorkJobsByRequestId = new Map(
+    data.awaitingActiveWorkJobs.map((job) => [job.repair_request, job]),
+  );
 
   return (
     <div className="space-y-8">
@@ -69,7 +84,7 @@ export function ClientWorkspaceLivePage() {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard helper="Waiting for a repairer response" label="Pending Approval" value={pendingApprovals} />
-        <StatCard helper="Ready to return and pay" label="Approved Awaiting Payment" value={approvedAwaitingPayment} />
+        <StatCard helper="Approved items waiting for payment or active work" label="Approved Queue" value={approvedAwaitingPayment} />
         <StatCard helper="Live statuses from repairers" label="Active Repairs" value={data.activeJobs.length} />
         <StatCard helper="Collected or completed items" label="Completed" value={data.completedJobs.length} />
       </section>
@@ -83,7 +98,10 @@ export function ClientWorkspaceLivePage() {
             </div>
             {data.approvalQueue.length ? (
               <div className="space-y-4">
-                {data.approvalQueue.map((repairRequest) => (
+                {data.approvalQueue.map((repairRequest) => {
+                  const awaitingActiveWorkJob = awaitingActiveWorkJobsByRequestId.get(repairRequest.id);
+
+                  return (
                   <div key={repairRequest.id} className="rounded-[20px] border border-[var(--cream-3)] bg-[var(--card)] p-5">
                     <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
@@ -93,7 +111,7 @@ export function ClientWorkspaceLivePage() {
                         </p>
                       </div>
                       <span className="rounded-full bg-[var(--cream-2)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-60)]">
-                        {formatStatusLabel(repairRequest.selection_status)}
+                        {formatRepairStatusLabel(repairRequest.selection_status)}
                       </span>
                     </div>
                     <p className="mb-3 text-sm text-[var(--ink-60)]">
@@ -105,11 +123,14 @@ export function ClientWorkspaceLivePage() {
                         (repairRequest.selection_status === "pending"
                           ? "Waiting for the repairer to review this item."
                           : repairRequest.selection_status === "approved"
-                            ? "Approved. You can now return to the request flow and confirm payment."
+                            ? awaitingActiveWorkJob
+                              ? "Approved. Waiting for the repairer to move this item into Active Work."
+                              : "Approved. Waiting for the repairer to prepare this item for work."
                             : "No response recorded.")}
                     </p>
                   </div>
-                ))}
+                );
+                })}
               </div>
             ) : (
               <p className="text-sm leading-7 text-[var(--ink-60)]">No repairer approvals are waiting right now. Select a matched repairer from the request flow to start the review process.</p>
@@ -133,7 +154,7 @@ export function ClientWorkspaceLivePage() {
                         </p>
                       </div>
                       <span className="rounded-full bg-[var(--green-light)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--green)]">
-                        {formatStatusLabel(job.status)}
+                        {formatRepairStatusLabel(job.status, job.payment_status)}
                       </span>
                     </div>
                     <p className="mb-2 text-sm text-[var(--ink-60)]">
@@ -142,6 +163,19 @@ export function ClientWorkspaceLivePage() {
                     <p className="mb-2 text-sm text-[var(--ink-60)]">
                       <span className="font-semibold text-[var(--ink)]">Quote:</span> A${job.quote_amount}
                     </p>
+                    {job.status === "ready" && job.payment_status !== "paid" ? (
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[18px] bg-[var(--green-light)] p-4 text-sm text-[var(--green)]">
+                        <p>Repair work is completed. Pay now to close this repair and move it into the completed list on both dashboards.</p>
+                        <button
+                          className="rounded-full bg-[var(--green)] px-5 py-3 text-sm font-semibold text-white"
+                          disabled={payMutation.isPending}
+                          onClick={() => payMutation.mutate(job.booking)}
+                          type="button"
+                        >
+                          {payMutation.isPending ? "Processing..." : "Pay Now"}
+                        </button>
+                      </div>
+                    ) : null}
                     <div className="rounded-[18px] bg-[var(--cream-2)] p-4 text-sm text-[var(--ink-60)]">
                       <span className="font-semibold text-[var(--ink)]">Latest update:</span> {job.latest_update || "The repairer has not posted an update yet."}
                     </div>
@@ -164,7 +198,7 @@ export function ClientWorkspaceLivePage() {
                   <div key={job.id} className="rounded-[20px] border border-[var(--cream-3)] bg-[var(--card)] p-4">
                     <p className="font-semibold text-[var(--ink)]">{job.item_name}</p>
                     <p className="text-sm text-[var(--ink-60)]">
-                      {job.repairer_name} · {formatStatusLabel(job.status)} · Ref #{job.reference_code}
+                      {job.repairer_name} · {formatRepairStatusLabel(job.status, job.payment_status)} · Ref #{job.reference_code}
                     </p>
                   </div>
                 ))}

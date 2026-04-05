@@ -1,11 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Elements } from "@stripe/react-stripe-js";
-import { loadStripe } from "@stripe/stripe-js";
-import { startTransition, useDeferredValue, useMemo, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { api, type BookingPayload, type RepairAnalysisPayload, type RepairRequestMatch, type RepairRequestPayload } from "../../lib/api/client";
+import { api, type RepairAnalysisPayload, type RepairRequestMatch, type RepairRequestPayload } from "../../lib/api/client";
 
 const requestSchema = z.object({
   category: z.string().min(1, "Choose a repair category"),
@@ -18,14 +16,11 @@ const requestSchema = z.object({
 });
 
 type RequestFormValues = z.infer<typeof requestSchema>;
-
-const stripePromise = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
-  ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
-  : null;
-
-function PaymentPreview() {
-  return <p className="text-sm text-[var(--ink-60)]">Stripe Elements is configured for payment collection in connected environments.</p>;
-}
+type UploadedPreview = {
+  name: string;
+  size: number;
+  url: string;
+};
 
 function parseNumber(value: string | number) {
   return typeof value === "number" ? value : Number.parseFloat(value);
@@ -104,6 +99,7 @@ async function uploadPhotos(files: File[]) {
 export function RequestWizard() {
   const [step, setStep] = useState(1);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [uploadedPreviews, setUploadedPreviews] = useState<UploadedPreview[]>([]);
   const [selectedMatchId, setSelectedMatchId] = useState("");
   const [sortBy, setSortBy] = useState("best");
   const [analysis, setAnalysis] = useState<RepairAnalysisPayload | null>(null);
@@ -114,8 +110,6 @@ export function RequestWizard() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSubmittingSelection, setIsSubmittingSelection] = useState(false);
   const [isRefreshingSelection, setIsRefreshingSelection] = useState(false);
-  const [isBooking, setIsBooking] = useState(false);
-  const [booking, setBooking] = useState<BookingPayload | null>(null);
   const deferredSortBy = useDeferredValue(sortBy);
   const form = useForm<RequestFormValues>({
     resolver: zodResolver(requestSchema),
@@ -134,6 +128,26 @@ export function RequestWizard() {
     onDrop: (files) => setUploadedFiles(files),
   });
 
+  useEffect(() => {
+    const nextPreviews = uploadedFiles.map((file) => ({
+      name: file.name,
+      size: file.size,
+      url:
+        typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
+          ? URL.createObjectURL(file)
+          : formatUploadFallback(file.name),
+    }));
+    setUploadedPreviews(nextPreviews);
+
+    return () => {
+      nextPreviews.forEach((preview) => {
+        if (preview.url.startsWith("blob:") && typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+          URL.revokeObjectURL(preview.url);
+        }
+      });
+    };
+  }, [uploadedFiles]);
+
   const sortedMatches = useMemo(() => {
     if (deferredSortBy === "price") {
       return [...matches].sort((left, right) => parseNumber(left.quote_amount) - parseNumber(right.quote_amount));
@@ -148,7 +162,6 @@ export function RequestWizard() {
 
   const selectedMatch = sortedMatches.find((match) => match.id === selectedMatchId) ?? sortedMatches[0] ?? null;
   const selectionStatus = repairRequest?.selection_status ?? "none";
-  const canConfirmPayment = selectionStatus === "approved";
   const selectedRepairerName = repairRequest?.selected_repairer_name ?? selectedMatch?.repairer_name ?? "No repairer selected";
   const selectionStatusLabel =
     selectionStatus === "pending"
@@ -162,7 +175,10 @@ export function RequestWizard() {
   const onAnalyze = form.handleSubmit(async (values) => {
     setSubmitError(null);
     setUploadNotice(null);
-    setBooking(null);
+    setAnalysis(null);
+    setRepairRequest(null);
+    setMatches([]);
+    setSelectedMatchId("");
     setIsAnalyzing(true);
 
     try {
@@ -251,41 +267,10 @@ export function RequestWizard() {
     }
   }
 
-  async function handleBooking() {
-    if (!repairRequest || !selectedMatch) {
-      setSubmitError("Choose a repairer before confirming the booking.");
-      return;
-    }
-    if (!canConfirmPayment) {
-      setSubmitError("Confirm & Pay unlocks only after the selected repairer approves the item.");
-      return;
-    }
-
-    setSubmitError(null);
-    setIsBooking(true);
-
-    try {
-      const preferredDate = form.getValues("preferredDate");
-      const scheduledFor = preferredDate ? new Date(`${preferredDate}T10:00:00`).toISOString() : null;
-      const response = await api.createBooking({
-        repair_request: repairRequest.id,
-        repairer: selectedMatch.repairer,
-        scheduled_for: scheduledFor,
-        notes: form.getValues("notes") ?? "",
-      });
-      setBooking(response);
-      setRepairRequest((current) => (current ? { ...current, status: "booked" } : current));
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Booking could not be created.");
-    } finally {
-      setIsBooking(false);
-    }
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-3">
-        {["Describe", "AI Analysis", "Choose", "Confirm & Pay"].map((label, index) => (
+        {["Describe", "AI Analysis", "Choose", "Review Status"].map((label, index) => (
           <div key={label} className="flex items-center gap-3">
             <div
               className={`flex size-10 items-center justify-center rounded-full border text-sm font-semibold ${
@@ -356,6 +341,16 @@ export function RequestWizard() {
                 <p className="mt-2 text-xs text-[var(--ink-60)]">JPG, PNG up to 10MB each</p>
               </div>
               <p className="mt-3 text-sm text-[var(--ink-60)]">{uploadedFiles.length ? `${uploadedFiles.length} file(s) selected.` : "No files selected yet."}</p>
+              {uploadedPreviews.length ? (
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {uploadedPreviews.map((preview) => (
+                    <figure key={`${preview.name}-${preview.size}`} className="overflow-hidden rounded-[20px] border border-[var(--cream-3)] bg-white">
+                      <img alt={preview.name} className="h-36 w-full object-cover" src={preview.url} />
+                      <figcaption className="truncate px-4 py-3 text-xs font-semibold text-[var(--ink-60)]">{preview.name}</figcaption>
+                    </figure>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div className="soft-panel rounded-[24px] p-6">
               <p className="badge badge-green mb-3">AI Damage Detection</p>
@@ -548,22 +543,17 @@ export function RequestWizard() {
               ) : null}
               {selectionStatus === "pending" ? (
                 <div className="rounded-[20px] bg-[var(--cream-2)] p-5 text-sm text-[var(--ink-60)]">
-                  Waiting for the selected repairer to approve or reject this item. Payment stays locked until they respond.
+                  Waiting for the selected repairer to approve or reject this item. Repair work starts only after approval.
                 </div>
               ) : null}
               {selectionStatus === "approved" ? (
                 <div className="rounded-[20px] bg-[var(--green-light)] p-5 text-sm text-[var(--green)]">
-                  This repairer approved the item. You can now continue to payment.
+                  This repairer approved the item. They can now move it into Active Work, and payment will be requested only after the repair is marked completed.
                 </div>
               ) : null}
               {selectionStatus === "rejected" ? (
                 <div className="rounded-[20px] bg-[rgba(175,99,18,0.12)] p-5 text-sm text-[var(--amber)]">
                   Rejected by repairer. {repairRequest?.repairer_response_reason || "No reason was provided."}
-                </div>
-              ) : null}
-              {booking ? (
-                <div className="rounded-[20px] bg-[var(--green-light)] p-5 text-sm text-[var(--green)]">
-                  Booking created. RepairHub reference: <span className="font-semibold">{booking.id}</span>. Payment status: {booking.payment_status}.
                 </div>
               ) : null}
               {submitError ? <p className="rounded-[20px] bg-[rgba(175,99,18,0.12)] p-4 text-sm text-[var(--amber)]">{submitError}</p> : null}
@@ -593,15 +583,15 @@ export function RequestWizard() {
               </div>
             </div>
             <div className="surface-card p-6">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-[var(--ink-40)]">Secure Checkout</p>
-              <div className={`mb-5 rounded-[20px] border p-4 text-sm ${canConfirmPayment ? "border-[var(--green-border)] bg-[var(--green-light)]/70 text-[var(--green)]" : "border-[var(--cream-3)] bg-[var(--cream-2)] text-[var(--ink-60)]"}`}>
-                {canConfirmPayment
-                  ? "Repairer approval received. Payment is unlocked and will create the live booking record in Django."
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-[var(--ink-40)]">Repair Flow</p>
+              <div className={`mb-5 rounded-[20px] border p-4 text-sm ${selectionStatus === "approved" ? "border-[var(--green-border)] bg-[var(--green-light)]/70 text-[var(--green)]" : "border-[var(--cream-3)] bg-[var(--cream-2)] text-[var(--ink-60)]"}`}>
+                {selectionStatus === "approved"
+                  ? "Repairer approval received. The repairer can start Active Work now, and customer payment will happen only after the item is marked completed."
                   : selectionStatus === "pending"
-                    ? "Payment is locked while the repairer reviews this item."
+                    ? "Waiting for repairer approval before any work begins."
                     : selectionStatus === "rejected"
                       ? "This repairer rejected the item. Choose another repairer to continue."
-                      : "Send the item to the repairer for approval before payment becomes available."}
+                      : "Send the item to the repairer for approval to begin the repair workflow."}
               </div>
               <div className="space-y-3 text-sm text-[var(--ink-60)]">
                 <div className="flex items-center justify-between">
@@ -617,30 +607,24 @@ export function RequestWizard() {
                   <span className="display text-3xl text-[var(--green)]">{formatCurrency(parseNumber(selectedMatch.quote_amount) * 1.05)}</span>
                 </div>
               </div>
-              <div className="mt-5 rounded-[20px] border border-[var(--cream-3)] bg-[var(--cream-2)] p-4">
-                {stripePromise ? (
-                  <Elements stripe={stripePromise}>
-                    <PaymentPreview />
-                  </Elements>
-                ) : (
-                  <p className="text-sm text-[var(--ink-60)]">Add `VITE_STRIPE_PUBLISHABLE_KEY` to enable Stripe Elements in development.</p>
-                )}
+              <div className="mt-5 rounded-[20px] border border-[var(--cream-3)] bg-[var(--cream-2)] p-4 text-sm text-[var(--ink-60)]">
+                Payment is no longer collected in this step. Once the repairer marks the item completed, the customer will pay from the Client Workspace.
               </div>
               <div className="mt-6 flex justify-end gap-3">
                 <button
-                  className="rounded-full bg-[var(--green)] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-[var(--ink-40)]"
-                  disabled={isBooking || !canConfirmPayment || Boolean(booking)}
-                  onClick={() => void handleBooking()}
+                  className="rounded-full border border-[var(--cream-3)] px-5 py-3 text-sm font-semibold text-[var(--ink-60)]"
+                  disabled={isRefreshingSelection}
+                  onClick={() => void refreshRepairRequestState()}
                   type="button"
                 >
-                  {isBooking ? "Creating booking..." : booking ? "Booking Created" : canConfirmPayment ? "Confirm & Pay" : "Waiting for Approval"}
+                  {isRefreshingSelection ? "Refreshing..." : "Refresh Repair Status"}
                 </button>
               </div>
             </div>
           </div>
         ) : (
           <div className="surface-card rounded-[24px] p-6">
-            <p className="text-sm text-[var(--ink-60)]">No repairer is selected yet. Go back to the match list and choose one before booking.</p>
+            <p className="text-sm text-[var(--ink-60)]">No repairer is selected yet. Go back to the match list and choose one before continuing the repair workflow.</p>
           </div>
         )
       ) : null}

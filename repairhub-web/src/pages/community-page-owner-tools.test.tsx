@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { resetCommunityThreads } from "../data/mock-data";
 import { useAuthStore } from "../state/auth-store";
@@ -126,6 +126,8 @@ describe("CommunityPageOwnerTools", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
-    expect(screen.queryByText("Can a split dining chair rail be glued back together?")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("Can a split dining chair rail be glued back together?")).not.toBeInTheDocument();
+    });
   });
 });

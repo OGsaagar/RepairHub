@@ -3,11 +3,13 @@ import { useState } from "react";
 import { PageHeader } from "../components/shared/page-header";
 import { StatCard } from "../components/shared/stat-card";
 import { api, type RepairJobPayload, type RepairRequestPayload, type RepairerProfilePayload } from "../lib/api/client";
+import { formatRepairStatusLabel, isAwaitingActiveWork } from "../lib/repairs/status";
 import { useAuthStore } from "../state/auth-store";
 
 type RepairerDashboardView = {
   profile: RepairerProfilePayload | null;
   reviewQueue: RepairRequestPayload[];
+  awaitingActiveWorkJobs: RepairJobPayload[];
   liveJobs: RepairJobPayload[];
   completedJobs: RepairJobPayload[];
 };
@@ -23,10 +25,6 @@ const emptyShopForm = {
   service_radius_km: "10.0",
 };
 
-function formatStatusLabel(value: string) {
-  return value.replaceAll("_", " ");
-}
-
 const onlineFieldLabels: Record<string, string> = {
   headline: "repair headline",
   city: "city",
@@ -38,12 +36,16 @@ const onlineFieldLabels: Record<string, string> = {
 
 async function fetchRepairerDashboardView(): Promise<RepairerDashboardView> {
   const [profile, reviewQueue, jobs] = await Promise.all([api.getMyRepairerProfile(), api.getRepairerQueue(), api.getRepairerJobs()]);
-  const bookedRequestIds = new Set(jobs.map((job) => job.repair_request));
+  const awaitingActiveWorkJobs = jobs.filter((job) => isAwaitingActiveWork(job.status));
+  const activeOrCompletedRequestIds = new Set(
+    jobs.filter((job) => !isAwaitingActiveWork(job.status)).map((job) => job.repair_request),
+  );
 
   return {
     profile,
-    reviewQueue: reviewQueue.filter((repairRequest) => !bookedRequestIds.has(repairRequest.id)),
-    liveJobs: jobs.filter((job) => !["collected", "completed"].includes(job.status)),
+    reviewQueue: reviewQueue.filter((repairRequest) => !activeOrCompletedRequestIds.has(repairRequest.id)),
+    awaitingActiveWorkJobs,
+    liveJobs: jobs.filter((job) => !isAwaitingActiveWork(job.status) && !["collected", "completed"].includes(job.status)),
     completedJobs: jobs.filter((job) => ["collected", "completed"].includes(job.status)),
   };
 }
@@ -53,7 +55,6 @@ export function RepairerDashboardLivePage() {
   const user = useAuthStore((state) => state.user);
   const [isProfileFormOpen, setIsProfileFormOpen] = useState(false);
   const [reviewReasons, setReviewReasons] = useState<Record<string, string>>({});
-  const [jobStatuses, setJobStatuses] = useState<Record<string, string>>({});
   const [jobNotes, setJobNotes] = useState<Record<string, string>>({});
   const [shopForm, setShopForm] = useState(emptyShopForm);
   const { data, error, isPending } = useQuery({
@@ -85,6 +86,16 @@ export function RepairerDashboardLivePage() {
       }),
     onSuccess: async (_, variables) => {
       setReviewReasons((current) => ({ ...current, [variables.requestId]: "" }));
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["repairer-dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["client-workspace"] }),
+      ]);
+    },
+  });
+
+  const startActiveWorkMutation = useMutation({
+    mutationFn: (requestId: string) => api.startActiveWork(requestId),
+    onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["repairer-dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["client-workspace"] }),
@@ -134,7 +145,6 @@ export function RepairerDashboardLivePage() {
   const pendingReviews = data.reviewQueue.filter((request) => request.selection_status === "pending").length;
   const approvedAwaitingPayment = data.reviewQueue.filter((request) => request.selection_status === "approved").length;
   const onlineFormError = profileMutation.error instanceof Error ? profileMutation.error.message : null;
-
   return (
     <div className="space-y-8">
       <PageHeader
@@ -269,7 +279,7 @@ export function RepairerDashboardLivePage() {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard helper="Selected items waiting for your decision" label="Pending Reviews" value={pendingReviews} />
-        <StatCard helper="Approved and waiting for customer payment" label="Approved Awaiting Payment" value={approvedAwaitingPayment} />
+        <StatCard helper="Approved items waiting for payment or active work" label="Approved Queue" value={approvedAwaitingPayment} />
         <StatCard helper="Jobs you can move through repair stages" label="Live Jobs" value={data.liveJobs.length} />
         <StatCard helper="Collected or completed jobs" label="Completed" value={data.completedJobs.length} />
       </section>
@@ -291,7 +301,7 @@ export function RepairerDashboardLivePage() {
                     </p>
                   </div>
                   <span className="rounded-full bg-[var(--cream-2)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-60)]">
-                    {formatStatusLabel(repairRequest.selection_status)}
+                    {formatRepairStatusLabel(repairRequest.selection_status)}
                   </span>
                 </div>
                 <p className="mb-3 text-sm text-[var(--ink-60)]">
@@ -332,13 +342,30 @@ export function RepairerDashboardLivePage() {
                       </button>
                     </div>
                   </>
+                ) : repairRequest.selection_status === "approved" ? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-[var(--ink-60)]">
+                      <span className="font-semibold text-[var(--ink)]">Recorded response:</span>{" "}
+                      {repairRequest.repairer_response_reason || "Approved and waiting for customer payment."}
+                    </p>
+                    <div className="rounded-[18px] bg-[var(--cream-2)] p-4 text-sm text-[var(--ink-60)]">
+                      Approval is recorded. Move this item into Active Work so the customer sees the same live repair status in their workspace.
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        className="rounded-full bg-[var(--green)] px-5 py-3 text-sm font-semibold text-white"
+                        disabled={startActiveWorkMutation.isPending}
+                        onClick={() => startActiveWorkMutation.mutate(repairRequest.id)}
+                        type="button"
+                      >
+                        {startActiveWorkMutation.isPending ? "Starting..." : "Proceed to Active Work"}
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   <p className="text-sm text-[var(--ink-60)]">
                     <span className="font-semibold text-[var(--ink)]">Recorded response:</span>{" "}
-                    {repairRequest.repairer_response_reason ||
-                      (repairRequest.selection_status === "approved"
-                        ? "Approved and waiting for customer payment."
-                        : "Rejected without an additional note.")}
+                    {repairRequest.repairer_response_reason || "Rejected without an additional note."}
                   </p>
                 )}
               </div>
@@ -366,27 +393,28 @@ export function RepairerDashboardLivePage() {
                     </p>
                   </div>
                   <span className="rounded-full bg-[var(--green-light)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--green)]">
-                    {formatStatusLabel(job.status)}
+                    {formatRepairStatusLabel(job.status, job.payment_status)}
                   </span>
                 </div>
                 <div className="grid gap-4 lg:grid-cols-[220px_1fr_auto]">
-                  <label className="block text-sm font-semibold text-[var(--ink-60)]">
-                    Job status
-                    <select
-                      className="mt-2 w-full rounded-2xl border border-[var(--cream-3)] bg-white px-4 py-3"
-                      value={jobStatuses[job.id] ?? job.status}
-                      onChange={(event) =>
-                        setJobStatuses((current) => ({
-                          ...current,
-                          [job.id]: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="in_repair">In Repair</option>
-                      <option value="ready">Ready</option>
-                      <option value="collected">Collected</option>
-                    </select>
-                  </label>
+                  <div className="rounded-[18px] bg-[var(--cream-2)] p-4 text-sm text-[var(--ink-60)]">
+                    {job.status === "in_repair" ? (
+                      <>
+                        <p className="font-semibold text-[var(--ink)]">Repair in progress</p>
+                        <p className="mt-2">Mark the item completed once the repair work is done. The customer will pay after that step.</p>
+                      </>
+                    ) : job.status === "ready" && job.payment_status !== "paid" ? (
+                      <>
+                        <p className="font-semibold text-[var(--ink)]">Completed and awaiting payment</p>
+                        <p className="mt-2">The repair work is finished. RepairHub is now waiting for the customer to complete payment.</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-semibold text-[var(--ink)]">Job status</p>
+                        <p className="mt-2">This item is following the current repair lifecycle state shown above.</p>
+                      </>
+                    )}
+                  </div>
                   <label className="block text-sm font-semibold text-[var(--ink-60)]">
                     Update for customer
                     <textarea
@@ -402,20 +430,30 @@ export function RepairerDashboardLivePage() {
                     />
                   </label>
                   <div className="flex items-end">
-                    <button
-                      className="rounded-full bg-[var(--green)] px-5 py-3 text-sm font-semibold text-white"
-                      disabled={transitionMutation.isPending}
-                      onClick={() =>
-                        transitionMutation.mutate({
-                          jobId: job.id,
-                          status: jobStatuses[job.id] ?? job.status,
-                          latestUpdate: jobNotes[job.id] ?? "",
-                        })
-                      }
-                      type="button"
-                    >
-                      Update Status
-                    </button>
+                    {job.status === "in_repair" ? (
+                      <button
+                        className="rounded-full bg-[var(--green)] px-5 py-3 text-sm font-semibold text-white"
+                        disabled={transitionMutation.isPending}
+                        onClick={() =>
+                          transitionMutation.mutate({
+                            jobId: job.id,
+                            status: "ready",
+                            latestUpdate: jobNotes[job.id] ?? "",
+                          })
+                        }
+                        type="button"
+                      >
+                        Completed
+                      </button>
+                    ) : job.status === "ready" && job.payment_status !== "paid" ? (
+                      <div className="rounded-full border border-[var(--cream-3)] px-5 py-3 text-sm font-semibold text-[var(--ink-60)]">
+                        Waiting for Payment
+                      </div>
+                    ) : (
+                      <div className="rounded-full border border-[var(--cream-3)] px-5 py-3 text-sm font-semibold text-[var(--ink-60)]">
+                        Status Locked
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="mt-3 rounded-[18px] bg-[var(--cream-2)] p-4 text-sm text-[var(--ink-60)]">
@@ -425,7 +463,7 @@ export function RepairerDashboardLivePage() {
             ))}
           </div>
         ) : (
-          <p className="text-sm leading-7 text-[var(--ink-60)]">No live paid jobs yet. Once a customer pays after approval, the job will appear here for status updates.</p>
+          <p className="text-sm leading-7 text-[var(--ink-60)]">No live repair jobs yet. Once you move an approved item into Active Work, it will appear here for status updates.</p>
         )}
       </section>
     </div>
