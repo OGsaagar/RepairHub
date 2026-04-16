@@ -1,10 +1,13 @@
 from decimal import Decimal
 
 import pytest
+from django.apps import apps as django_apps
 from django.contrib.auth import get_user_model
 from django.db import connection
+from django.test import Client
 from rest_framework.test import APIClient
 
+from apps.accounts.bootstrap import ensure_env_admin_account
 from apps.ai.models import AIAudit
 from apps.ai.services import analyze_damage
 from apps.catalog.models import PricingRule, RepairerService, ServiceCategory
@@ -65,6 +68,50 @@ def test_login_returns_user_payload_with_role():
 
     assert response.status_code == 200
     assert response.json()["user"]["role"] == "customer"
+
+
+@pytest.mark.django_db
+def test_env_admin_credentials_can_log_into_django_admin(monkeypatch):
+    monkeypatch.setenv("ADMIN_EMAIL", "env-admin@example.com")
+    monkeypatch.setenv("ADMIN_PASSWORD", "EnvAdminPassword!2026")
+
+    ensure_env_admin_account()
+
+    user = User.objects.get(email="env-admin@example.com")
+    assert user.role == User.Role.ADMIN
+    assert user.profile_status == User.ProfileStatus.ACTIVE
+    assert user.is_staff is True
+    assert user.is_superuser is True
+    assert user.check_password("EnvAdminPassword!2026") is True
+
+    client = Client()
+    login_page = client.get("/admins/login/")
+    assert login_page.status_code == 200
+
+    login_response = client.post(
+        "/admins/login/?next=/admins/",
+        {
+            "username": "env-admin@example.com",
+            "password": "EnvAdminPassword!2026",
+        },
+    )
+
+    assert login_response.status_code == 302
+    assert login_response["Location"].endswith("/admins/")
+
+
+@pytest.mark.django_db
+def test_all_project_models_are_registered_in_django_admin():
+    from django.contrib import admin
+
+    project_models = [
+        model
+        for model in django_apps.get_models()
+        if django_apps.get_app_config(model._meta.app_label).name.startswith("apps.")
+    ]
+
+    assert project_models
+    assert all(model in admin.site._registry for model in project_models)
 
 
 @pytest.mark.django_db

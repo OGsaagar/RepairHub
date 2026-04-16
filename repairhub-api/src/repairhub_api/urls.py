@@ -51,7 +51,7 @@ router.register("notifications", NotificationViewSet, basename="notification")
 router.register("admin-audit-logs", AdminAuditLogViewSet, basename="admin-audit-log")
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
+    path("admins/", admin.site.urls),
     path("api/auth/register/", RegisterView.as_view(), name="register"),
     path("api/auth/login/", RepairHubTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/auth/refresh/", TokenRefreshView.as_view(), name="token_refresh"),

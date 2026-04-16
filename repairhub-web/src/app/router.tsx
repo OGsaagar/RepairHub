@@ -4,6 +4,7 @@ import { RouteGuard } from "../components/shared/route-guard";
 import { AdminPage } from "../pages/admin-page";
 import { ClientWorkspaceLivePage } from "../pages/client-workspace-live-page";
 import { CommunityPage } from "../pages/community-page";
+import { DjangoAdminRedirectPage } from "../pages/django-admin-redirect-page";
 import { EventPage } from "../pages/event-page";
 import { HomePage } from "../pages/home-page";
 import { LoginPage } from "../pages/login-page";
@@ -54,6 +55,7 @@ export const router = createBrowserRouter([
       { path: "community", element: <CommunityPage /> },
       { path: "community/thread/:threadId", element: <ThreadPage /> },
       { path: "events/:eventId", element: <EventPage /> },
+      { path: "admins/*", element: <DjangoAdminRedirectPage /> },
       {
         path: "admin",
         element: (
